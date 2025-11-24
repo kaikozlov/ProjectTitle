@@ -1,0 +1,9 @@
+return {
+  _all = {
+    verbose = true,
+    timeout = 5,
+  },
+  default = {
+    ROOT = {"spec"}
+  }
+}
