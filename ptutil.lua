@@ -50,8 +50,8 @@ ptutil.list_defaults = {
     authors_font_nominal = 14,   -- nominal authors/metadata font size
     authors_font_max = 18,       -- maximum authors font size
     authors_font_min = 10,       -- minimum authors font size
-    wright_font_nominal = 12,    -- nominal right widget font size
-    wright_font_max = 18,        -- maximum right widget font size
+    wright_font_nominal = 11,    -- nominal right widget font size (reduced for better spacing)
+    wright_font_max = 16,        -- maximum right widget font size (reduced for better spacing)
 
     -- calibre tags/keywords
     tags_font_min = 10,   -- minimum tags font size
