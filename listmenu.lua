@@ -1,5 +1,6 @@
 local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
+local BottomContainer = require("ui/widget/container/bottomcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
 local DocSettings = require("docsettings")
@@ -447,10 +448,14 @@ function ListMenuItem:update()
             local wright_width = 0
             local wright_height = 0
             local wright_items = { align = "right" }
-            local est_page_count, draw_progressbar = ptutil.showProgressBar(bookinfo.pages)
-            self.pages = est_page_count
-            bookinfo.pages = est_page_count
             local pages = bookinfo.pages -- limit to value in database
+            if not pages and book_info and book_info.pages then
+                pages = book_info.pages
+            end
+
+            local est_page_count, draw_progressbar = ptutil.showProgressBar(pages)
+            self.pages = est_page_count
+            -- bookinfo.pages = est_page_count
 
             if draw_progressbar then
                 local progressbar_items = { align = "center" }
@@ -459,7 +464,7 @@ function ListMenuItem:update()
                 local max_progress_size = ptutil.list_defaults.progress_bar_max_size
                 local pages_per_pixel = ptutil.list_defaults.progress_bar_pages_per_pixel
                 local min_progress_size = ptutil.list_defaults.progress_bar_min_size
-                local progress_bar_height = wright_font_size -- progress bar same height as progress text
+                local progress_bar_height = wright_font_size * 0.85 -- slightly smaller than text for compactness
                 local total_pixels = math.max(
                     (math.min(math.floor((fn_pages / pages_per_pixel) + 0.5), max_progress_size)), min_progress_size)
                 local progress_bar = ProgressWidget:new {
@@ -477,7 +482,7 @@ function ListMenuItem:update()
                 local progress_width = progress_bar:getSize().w
                 local progress_dimen
                 local bar_and_icons
-                local bar_icon_size = Screen:scaleBySize(progress_bar_height * 1.5333)  -- size for icons used with progress bar
+                local bar_icon_size = Screen:scaleBySize(progress_bar_height * 1.25)  -- reduced from 1.5333 for tighter spacing
 
                 if fn_pages > (max_progress_size * pages_per_pixel) then
                     progress_width = progress_width + math.floor(bar_icon_size / 2) -- add extra width for max size indicator
@@ -595,41 +600,41 @@ function ListMenuItem:update()
 
             -- show progress text, page text, and/or file info text
             if BookInfoManager:getSetting("hide_file_info") then
+                -- Determine status text
                 if status == "complete" then
                     progress_str = finished_text
                 elseif status == "abandoned" then
                     progress_str = abandoned_string
                 elseif percent_finished then
                     progress_str = read_text
-                    if not draw_progressbar then
-                        percent_str = math.floor(100 * percent_finished) .. "%"
-                    end
-                    if pages then
-                        if BookInfoManager:getSetting("show_pages_read_as_progress") then
-                            percent_str = read_text
-                            pages_str = T(_("Page %1 of %2"), Math.round(percent_finished * pages), pages)
-                        end
-                        if BookInfoManager:getSetting("show_pages_left_in_progress") then
-                            percent_str = read_text
-                            pages_left_str = T(_("%1 pages left"), Math.round(pages - percent_finished * pages), pages)
-                        end
-                    end
                 elseif not bookinfo._no_provider then
                     progress_str = unread_text
                 end
 
-                if BookInfoManager:getSetting("show_pages_read_as_progress") then
-                    if pages_str ~= "" then
-                        local wpageinfo = TextWidget:new {
-                            text = pages_str,
+                -- Get progress text format preference
+                local progress_text_format = BookInfoManager:getSetting("progress_text_format") or "status_and_percent"
+
+                -- Add tight spacing before progress bar if it exists
+                if draw_progressbar and progress_text_format ~= "status_only" then
+                    table.insert(wright_items, 1, VerticalSpan:new { width = Screen:scaleBySize(1) })
+                end
+
+                -- Build text based on format preference
+                if progress_text_format == "status_only" then
+                    -- Just show status (Reading, Finished, etc.)
+                    if progress_str ~= "" then
+                        local wprogressinfo = TextWidget:new {
+                            text = progress_str,
                             face = wright_font_face,
                             fgcolor = fgcolor,
                             padding = 0,
                         }
-                        table.insert(wright_items, 1, wpageinfo)
+                        table.insert(wright_items, 1, wprogressinfo)
                     end
-                else
-                    if percent_str ~= "" then
+                elseif progress_text_format == "status_and_percent" then
+                    -- Show status and percentage
+                    if percent_finished and (status ~= "complete" and status ~= "abandoned") then
+                        percent_str = math.floor(100 * percent_finished) .. "%"
                         local wpercentinfo = TextWidget:new {
                             text = percent_str,
                             face = wright_font_face,
@@ -637,27 +642,86 @@ function ListMenuItem:update()
                             padding = 0,
                         }
                         table.insert(wright_items, 1, wpercentinfo)
+                        -- Add minimal spacing between text lines
+                        if progress_str ~= "" then
+                            table.insert(wright_items, 1, VerticalSpan:new { width = Screen:scaleBySize(0.5) })
+                        end
                     end
-                end
-                if BookInfoManager:getSetting("show_pages_left_in_progress") then
-                    if pages_left_str ~= "" then
-                        local wpagesleftinfo = TextWidget:new {
-                            text = pages_left_str,
+                    if progress_str ~= "" then
+                        local wprogressinfo = TextWidget:new {
+                            text = progress_str,
                             face = wright_font_face,
                             fgcolor = fgcolor,
                             padding = 0,
                         }
-                        table.insert(wright_items, 1, wpagesleftinfo)
+                        table.insert(wright_items, 1, wprogressinfo)
                     end
-                end
-                if progress_str ~= "" then
-                    local wprogressinfo = TextWidget:new {
-                        text = progress_str,
-                        face = wright_font_face,
-                        fgcolor = fgcolor,
-                        padding = 0,
-                    }
-                    table.insert(wright_items, 1, wprogressinfo)
+                elseif progress_text_format == "status_and_pages" then
+                    -- Show status and pages read/total
+                    if pages and percent_finished and (status ~= "complete" and status ~= "abandoned") then
+                        pages_str = T(_("Page %1 of %2"), Math.round(percent_finished * pages), pages)
+                        local wpageinfo = TextWidget:new {
+                            text = pages_str,
+                            face = wright_font_face,
+                            fgcolor = fgcolor,
+                            padding = 0,
+                        }
+                        table.insert(wright_items, 1, wpageinfo)
+                        -- Add minimal spacing between text lines
+                        if progress_str ~= "" then
+                            table.insert(wright_items, 1, VerticalSpan:new { width = Screen:scaleBySize(0.5) })
+                        end
+                    end
+                    if progress_str ~= "" then
+                        local wprogressinfo = TextWidget:new {
+                            text = progress_str,
+                            face = wright_font_face,
+                            fgcolor = fgcolor,
+                            padding = 0,
+                        }
+                        table.insert(wright_items, 1, wprogressinfo)
+                    end
+                elseif progress_text_format == "status_percent_and_pages" then
+                    -- Show status with combined percentage and pages on one line
+                    if pages and percent_finished and (status ~= "complete" and status ~= "abandoned") then
+                        -- Combine page and percent into single line: "Page X of Y (Z%)"
+                        percent_str = math.floor(100 * percent_finished) .. "%"
+                        pages_str = T(_("Page %1 of %2"), Math.round(percent_finished * pages), pages) .. " (" .. percent_str .. ")"
+                        local wpageinfo = TextWidget:new {
+                            text = pages_str,
+                            face = wright_font_face,
+                            fgcolor = fgcolor,
+                            padding = 0,
+                        }
+                        table.insert(wright_items, 1, wpageinfo)
+                        -- Add minimal spacing between text lines
+                        if progress_str ~= "" then
+                            table.insert(wright_items, 1, VerticalSpan:new { width = Screen:scaleBySize(0.5) })
+                        end
+                    elseif percent_finished and (status ~= "complete" and status ~= "abandoned") then
+                        -- If we only have percent (no page count), show just percent
+                        percent_str = math.floor(100 * percent_finished) .. "%"
+                        local wpercentinfo = TextWidget:new {
+                            text = percent_str,
+                            face = wright_font_face,
+                            fgcolor = fgcolor,
+                            padding = 0,
+                        }
+                        table.insert(wright_items, 1, wpercentinfo)
+                        -- Add minimal spacing between text lines
+                        if progress_str ~= "" then
+                            table.insert(wright_items, 1, VerticalSpan:new { width = Screen:scaleBySize(0.5) })
+                        end
+                    end
+                    if progress_str ~= "" then
+                        local wprogressinfo = TextWidget:new {
+                            text = progress_str,
+                            face = wright_font_face,
+                            fgcolor = fgcolor,
+                            padding = 0,
+                        }
+                        table.insert(wright_items, 1, wprogressinfo)
+                    end
                 end
             else
                 local wfileinfo = TextWidget:new {
@@ -962,8 +1026,8 @@ function ListMenuItem:update()
 
             local wmetadata_reserved_space = math.max(0, wmain_width - wright_width - wright_right_padding)
             -- affix wright to bottom of vertical space
-            local wright_vertical_padding = math.max(0, avail_dimen_h - wright_height - title_reserved_space - Size.padding.default)
-            table.insert(wright_items, 1, VerticalSpan:new { width = (wright_vertical_padding) })
+            table.insert(wright_items, VerticalSpan:new { width = Size.padding.default })
+            wright_height = wright_height + Size.padding.default
 
             -- The combined size of the elements in a listbox should not exceed the available
             -- height of that listbox. Log if they do.
@@ -985,7 +1049,6 @@ function ListMenuItem:update()
                 logger.info(ptdbg.logprefix, "fontsize_authors ", fontsize_authors)
                 logger.info(ptdbg.logprefix, "wright_height ", wright_height)
                 logger.info(ptdbg.logprefix, "wright_width ", wright_width)
-                logger.info(ptdbg.logprefix, "wright_vertical_padding ", wright_vertical_padding)
             end
 
             -- build the widget which holds wtitle, wauthors, and wright
@@ -996,21 +1059,18 @@ function ListMenuItem:update()
                     TopContainer:new {
                         VerticalGroup:new {
                             VerticalSpan:new { width = title_reserved_space },
-                            OverlapGroup:new {
-                                TopContainer:new {
-                                    wmetadata,
-                                },
-                                TopContainer:new {
-                                    HorizontalGroup:new {
-                                        HorizontalSpan:new { width = wmetadata_reserved_space },
-                                        TopContainer:new {
-                                            VerticalGroup:new(wright_items),
-                                        },
-                                        HorizontalSpan:new { width = wright_right_padding },
-                                    },
-                                },
-                            },
+                            wmetadata,
                         },
+                    },
+                    BottomContainer:new {
+                        dimen = Geom:new { w = wmain_width, h = dimen.h },
+                        RightContainer:new {
+                            dimen = Geom:new { w = wmain_width, h = wright_height },
+                            HorizontalGroup:new {
+                                VerticalGroup:new(wright_items),
+                                HorizontalSpan:new { width = wright_right_padding },
+                            }
+                        }
                     },
                     wtitle_container
                 }

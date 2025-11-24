@@ -222,6 +222,7 @@ function CoverBrowser:init()
         BookInfoManager:saveSetting("hide_file_info", true)
         BookInfoManager:saveSetting("unified_display_mode", true)
         BookInfoManager:saveSetting("show_progress_in_mosaic", true)
+        BookInfoManager:saveSetting("show_mosaic_titles", true)
         BookInfoManager:saveSetting("autoscan_on_eject", false)
         G_reader_settings:makeTrue("aaaProjectTitle_initial_default_setup_done2")
         restart_needed = true
@@ -260,6 +261,23 @@ function CoverBrowser:init()
         logger.info(ptdbg.logprefix, "Migrating settings to version 5")
         BookInfoManager:saveSetting("show_tags", false)
         BookInfoManager:saveSetting("config_version", "5")
+    end
+    if BookInfoManager:getSetting("config_version") == 5 then
+        logger.info(ptdbg.logprefix, "Migrating settings to version 6")
+        -- Migrate old progress display settings to new unified format
+        -- Default: show status and percentage
+        local progress_text_format = "status_and_percent"
+        if BookInfoManager:getSetting("show_pages_read_as_progress") then
+            progress_text_format = "status_and_pages"
+        end
+        BookInfoManager:saveSetting("progress_text_format", progress_text_format)
+        -- Remove obsolete settings (keep them in DB for rollback compatibility, just don't use them)
+        BookInfoManager:saveSetting("config_version", "6")
+    end
+    if BookInfoManager:getSetting("config_version") == 6 then
+        logger.info(ptdbg.logprefix, "Migrating settings to version 7")
+        BookInfoManager:saveSetting("show_mosaic_titles", true)
+        BookInfoManager:saveSetting("config_version", "7")
     end
 
     -- restart if needed
@@ -538,7 +556,7 @@ function CoverBrowser:addToMainMenu(menu_items)
                 text = _("Book display"),
                 sub_item_table = {
                     {
-                        text = _("Show file info instead of pages or progress %"),
+                        text = _("Show file info instead of progress"),
                         checked_func = function() return not BookInfoManager:getSetting("hide_file_info") end,
                         callback = function()
                             BookInfoManager:toggleSetting("hide_file_info")
@@ -546,41 +564,69 @@ function CoverBrowser:addToMainMenu(menu_items)
                         end,
                     },
                     {
-                        text = _("Show pages read instead of progress %"),
-                        enabled_func = function()
-                            return not (
-                                    not BookInfoManager:getSetting("hide_file_info")
-                                )
+                        text = _("Show title and author near covers"),
+                        checked_func = function()
+                            return BookInfoManager:getSetting("show_mosaic_titles")
                         end,
-                        checked_func = function() return BookInfoManager:getSetting("show_pages_read_as_progress") end,
                         callback = function()
-                            BookInfoManager:toggleSetting("show_pages_read_as_progress")
+                            BookInfoManager:toggleSetting("show_mosaic_titles")
                             fc:updateItems(1, true)
                         end,
                     },
                     {
-                        text = _("Show progress % instead of progress bars"),
+                        text = _("Progress bar text display"),
+                        separator = true,
                         enabled_func = function()
-                            return not (
-                                    BookInfoManager:getSetting("show_pages_read_as_progress") or
-                                    not BookInfoManager:getSetting("hide_file_info")
-                                )
+                            return BookInfoManager:getSetting("hide_file_info")
                         end,
-                        checked_func = function() return BookInfoManager:getSetting("force_no_progressbars") end,
-                        callback = function()
-                            BookInfoManager:toggleSetting("force_no_progressbars")
-                            fc:updateItems(1, true)
-                        end,
+                        sub_item_table = {
+                            {
+                                text = _("Status only"),
+                                checked_func = function()
+                                    return BookInfoManager:getSetting("progress_text_format") == "status_only"
+                                end,
+                                callback = function()
+                                    BookInfoManager:saveSetting("progress_text_format", "status_only")
+                                    fc:updateItems(1, true)
+                                end,
+                            },
+                            {
+                                text = _("Status and percentage"),
+                                checked_func = function()
+                                    return BookInfoManager:getSetting("progress_text_format") == "status_and_percent"
+                                end,
+                                callback = function()
+                                    BookInfoManager:saveSetting("progress_text_format", "status_and_percent")
+                                    fc:updateItems(1, true)
+                                end,
+                            },
+                            {
+                                text = _("Status and pages read"),
+                                checked_func = function()
+                                    return BookInfoManager:getSetting("progress_text_format") == "status_and_pages"
+                                end,
+                                callback = function()
+                                    BookInfoManager:saveSetting("progress_text_format", "status_and_pages")
+                                    fc:updateItems(1, true)
+                                end,
+                            },
+                            {
+                                text = _("Status, percentage, and pages"),
+                                checked_func = function()
+                                    return BookInfoManager:getSetting("progress_text_format") == "status_percent_and_pages"
+                                end,
+                                callback = function()
+                                    BookInfoManager:saveSetting("progress_text_format", "status_percent_and_pages")
+                                    fc:updateItems(1, true)
+                                end,
+                            },
+                        },
                     },
                     {
                         text = _("Always show maximum length progress bars"),
                         separator = true,
                         enabled_func = function()
-                            return not (
-                                    BookInfoManager:getSetting("force_no_progressbars") or
-                                    BookInfoManager:getSetting("show_pages_read_as_progress") or
-                                    not BookInfoManager:getSetting("hide_file_info")
-                                )
+                            return BookInfoManager:getSetting("hide_file_info")
                         end,
                         checked_func = function() return BookInfoManager:getSetting("force_max_progressbars") end,
                         callback = function()

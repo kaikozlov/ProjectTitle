@@ -120,10 +120,15 @@ function FakeCover:init()
         title_text_color = Blitbuffer.COLOR_WHITE
         title_background_color = Blitbuffer.COLOR_GRAY_3
         local bold_title = false
-        if not title then -- use filename as title (big and centered)
+        if not title or title:match("^%s*$") then -- use filename as title (big and centered)
             titlefont = ptutil.good_serif
             bold_title = true
             title = filename
+            -- Truncate filename if too long
+            local max_len = 60
+            if title:len() > max_len then
+                title = title:sub(1, max_len) .. "…"
+            end
             title_text_color = Blitbuffer.COLOR_BLACK
             title_background_color = self.background
             if not self.title_add and self.filename_add then
@@ -410,6 +415,8 @@ local MosaicMenuItem = InputContainer:extend {
     cover_specs = nil,
     has_description = false,
     pages = nil,
+    cover_area = nil,
+    info_block_enabled = false,
 }
 
 function MosaicMenuItem:init()
@@ -463,6 +470,8 @@ function MosaicMenuItem:update()
     -- We will be a disctinctive widget whether we are a directory,
     -- a known file with image / without image, or a not yet known file
     local widget
+    self.cover_area = nil
+    self.info_block_enabled = false
 
     local dimen = Geom:new {
         w = self.width,
@@ -743,7 +752,13 @@ function MosaicMenuItem:update()
             self.percent_finished = percent_finished
             local status = book_info.status
             self.status = status
-            self.pages, self.show_progress_bar = ptutil.showProgressBar(bookinfo.pages)
+            
+            local pages = bookinfo.pages
+            if not pages and book_info and book_info.pages then
+                pages = book_info.pages
+            end
+            self.pages, self.show_progress_bar = ptutil.showProgressBar(pages)
+            
             local cover_bb_used = false
             self.bookinfo_found = true
             -- For wikipedia saved as epub, we made a cover from the 1st pic of the page,
@@ -754,20 +769,119 @@ function MosaicMenuItem:update()
             end
             if self.do_cover_image and bookinfo.has_cover and not bookinfo.ignore_cover then
                 cover_bb_used = true
-                -- Let ImageWidget do the scaling and give us a bb that fit
-                local frame_radius = 0
-                if self.show_progress_bar then
-                    frame_radius = Size.radius.default
-                end
+                local frame_radius = self.show_progress_bar and Size.radius.default or 0
                 local border_total = Size.border.thin * 2
+                local show_titles_setting = BookInfoManager:getSetting("show_mosaic_titles")
+                local title_text = not bookinfo.ignore_meta and bookinfo.title or nil
+                local authors_text = not bookinfo.ignore_meta and bookinfo.authors or nil
+                
+                -- Use filename as fallback if no title or title is blank/whitespace
+                -- Note: Lua's %s doesn't match Unicode whitespace like non-breaking space (\u{00A0})
+                -- so we also strip those before checking
+                if not title_text or title_text == "" or title_text:match("^%s*$") or
+                   title_text:gsub("[\u{00A0}\u{2000}-\u{200B}\u{FEFF}]", ""):match("^%s*$") then
+                    title_text = BD.filename(self.text)
+                    -- Truncate filename if too long
+                    local max_len = 60
+                    if title_text:len() > max_len then
+                        title_text = title_text:sub(1, max_len) .. "…"
+                    end
+                end
+                local info_container
+                local info_block_height = 0
+                local info_gap = 0
+                if show_titles_setting and (title_text or authors_text) then
+                    local info_width = math.floor(dimen.w * 0.9)
+                    local min_cover_height = math.max(Screen:scaleBySize(60), math.floor(dimen.h * 0.6))
+                    local max_reserved = math.max(0, dimen.h - min_cover_height)
+                    info_gap = Screen:scaleBySize(4)
+                    
+                    -- Calculate maximum height available for the info block
+                    local frame_overhead = (Size.border.thin + Size.padding.tiny) * 2
+                    local max_info_content_height = max_reserved - info_gap - frame_overhead
+                    
+                    local info_vgroup = VerticalGroup:new {}
+                    local title_font_size = 16
+                    if title_text then
+                        -- Limit title to 2 lines max by using height constraint
+                        local title_face = Font:getFace(ptutil.good_serif, title_font_size)
+                        local line_height = (title_face.size or title_font_size) * 1.3  -- approximate line height
+                        local max_title_lines = authors_text and 2 or 3  -- fewer lines if we have author
+                        local max_title_height = math.floor(line_height * max_title_lines)
+                        
+                        table.insert(info_vgroup, TextBoxWidget:new {
+                            text = BD.auto(title_text),
+                            face = title_face,
+                            width = info_width,
+                            height = max_title_height,
+                            height_overflow_show_ellipsis = true,
+                            alignment = "center",
+                            bold = true,
+                        })
+                    end
+                    if authors_text then
+                        table.insert(info_vgroup, TextWidget:new {
+                            text = BD.auto(authors_text),
+                            face = Font:getFace(ptutil.good_serif, 12),
+                            max_width = info_width,
+                            alignment = "center",
+                        })
+                    end
+                    info_container = FrameContainer:new {
+                        radius = Size.radius.default,
+                        bordersize = Size.border.thin,
+                        padding = Size.padding.tiny,
+                        margin = 0,
+                        background = Blitbuffer.COLOR_WHITE,
+                        info_vgroup,
+                    }
+                    info_block_height = info_container:getSize().h
+                    
+                    -- If still too tall, drop the authors line and try again
+                    if info_block_height + info_gap > max_reserved and authors_text then
+                        info_vgroup = VerticalGroup:new {}
+                        if title_text then
+                            local title_face = Font:getFace(ptutil.good_serif, title_font_size)
+                            local line_height = (title_face.size or title_font_size) * 1.3
+                            local max_title_height = math.floor(line_height * 2)
+                            table.insert(info_vgroup, TextBoxWidget:new {
+                                text = BD.auto(title_text),
+                                face = title_face,
+                                width = info_width,
+                                height = max_title_height,
+                                height_overflow_show_ellipsis = true,
+                                alignment = "center",
+                                bold = true,
+                            })
+                        end
+                        info_container = FrameContainer:new {
+                            radius = Size.radius.default,
+                            bordersize = Size.border.thin,
+                            padding = Size.padding.tiny,
+                            margin = 0,
+                            background = Blitbuffer.COLOR_WHITE,
+                            info_vgroup,
+                        }
+                        info_block_height = info_container:getSize().h
+                    end
+                    
+                    -- Final check - if still too tall, drop it entirely
+                    if info_block_height + info_gap > max_reserved then
+                        info_container = nil
+                        info_block_height = 0
+                        info_gap = 0
+                    end
+                end
+                local reserved_height = info_container and (info_block_height + info_gap) or 0
+                local available_cover_height = math.max(Size.padding.default, dimen.h - reserved_height)
                 local _, _, scale_factor = BookInfoManager.getCachedCoverSize(bookinfo.cover_w, bookinfo.cover_h,
-                    max_img_w - border_total, max_img_h - border_total)
+                    max_img_w - border_total, math.max(Size.padding.tiny, available_cover_height - border_total))
                 local img_width
                 local img_height
                 if ptutil.grid_defaults.stretch_covers then
                     scale_factor = nil
                     img_width = (max_img_w * ptutil.grid_defaults.stretch_ratio) - border_total
-                    img_height = max_img_h - border_total
+                    img_height = available_cover_height - border_total
                 else
                     img_width = math.floor(bookinfo.cover_w * scale_factor)
                     img_height = math.floor(bookinfo.cover_h * scale_factor)
@@ -778,20 +892,50 @@ function MosaicMenuItem:update()
                     width = img_width,
                     height = img_height,
                 }
+                local cover_frame = FrameContainer:new {
+                    width = img_width + border_total,
+                    height = img_height + border_total,
+                    margin = 0,
+                    padding = 0,
+                    radius = frame_radius,
+                    bordersize = Size.border.thin,
+                    dim = self.file_deleted,
+                    color = Blitbuffer.COLOR_GRAY_3,
+                    image,
+                }
+                local column = VerticalGroup:new {}
+                if info_container then
+                    table.insert(column, CenterContainer:new {
+                        dimen = Geom:new { w = dimen.w, h = info_block_height },
+                        info_container,
+                    })
+                    if info_gap > 0 then
+                        table.insert(column, VerticalSpan:new { width = info_gap })
+                    end
+                    self.info_block_enabled = true
+                end
+                table.insert(column, CenterContainer:new {
+                    dimen = Geom:new { w = dimen.w, h = available_cover_height },
+                    cover_frame,
+                })
+
                 widget = CenterContainer:new {
                     dimen = dimen,
-                    FrameContainer:new {
-                        width = img_width + border_total,
-                        height = img_height + border_total,
-                        margin = 0,
-                        padding = 0,
-                        radius = frame_radius,
-                        bordersize = Size.border.thin,
-                        dim = self.file_deleted,
-                        color = Blitbuffer.COLOR_GRAY_3,
-                        image,
-                    }
+                    column,
                 }
+
+                local cover_width = cover_frame:getSize().w
+                local cover_height = cover_frame:getSize().h
+                local cover_offset_x = math.max(0, math.floor((self.width - cover_width) / 2))
+                local cover_offset_y = (info_container and (info_block_height + info_gap) or 0)
+                    + math.max(0, math.floor((available_cover_height - cover_height) / 2))
+                self.cover_area = {
+                    width = cover_width,
+                    height = cover_height,
+                    offset_x = cover_offset_x,
+                    offset_y = cover_offset_y,
+                }
+
                 -- Let menu know it has some item with images
                 self.menu._has_cover_images = true
                 self._has_cover_image = true
@@ -808,11 +952,12 @@ function MosaicMenuItem:update()
                 elseif self.show_progress_bar then
                     bottom_pad = corner_mark_size - Screen:scaleBySize(2)
                 end
+                local fake_width = math.floor(dimen.w * 0.8)
                 widget = CenterContainer:new {
                     dimen = dimen,
                     FakeCover:new {
                         -- reduced width to make it look less squared, more like a book
-                        width = math.floor(dimen.w * 0.8),
+                        width = fake_width,
                         height = dimen.h,
                         bordersize = border_size,
                         filename = self.text,
@@ -825,6 +970,12 @@ function MosaicMenuItem:update()
                         bottom_pad = bottom_pad,
                         bottom_right_compensate = not self.show_progress_bar and self.do_hint_opened,
                     }
+                }
+                self.cover_area = {
+                    width = fake_width,
+                    height = dimen.h,
+                    offset_x = math.max(0, math.floor((self.width - fake_width) / 2)),
+                    offset_y = 0,
                 }
             end
             -- In case we got a blitbuffer and didnt use it (ignore_cover, wikipedia), free it
@@ -865,6 +1016,12 @@ function MosaicMenuItem:update()
                     file_deleted = self.file_deleted,
                 }
             }
+            self.cover_area = {
+                width = dimen.w,
+                height = dimen.h,
+                offset_x = 0,
+                offset_y = 0,
+            }
         else -- we're in pathchooser mode
             local filesize = self.mandatory or ""
             widget = CenterContainer:new {
@@ -878,6 +1035,12 @@ function MosaicMenuItem:update()
                     initial_sizedec = 4, -- start with a smaller font when filenames only
                     file_deleted = self.file_deleted,
                 }
+            }
+            self.cover_area = {
+                width = dimen.w,
+                height = dimen.h,
+                offset_x = 0,
+                offset_y = 0,
             }
         end
     end
@@ -907,21 +1070,28 @@ function MosaicMenuItem:paintTo(bb, x, y)
     self.is_directory = not (self.entry.is_file or self.entry.file)
     if self.is_directory then return end
 
-    -- other paintings are anchored to the sub-widget (cover image)
-    local target = self[1][1][1]
+    -- other paintings are anchored to the cover area metadata
+    local cover = self.cover_area or {
+        width = self.width,
+        height = self.height,
+        offset_x = 0,
+        offset_y = 0,
+    }
+    local cover_top = y + cover.offset_y
+    local cover_bottom = cover_top + cover.height
 
     if self.do_hint_opened and self.been_opened and is_pathchooser == false then
         if self.status == "complete" and not self.show_progress_bar then
             corner_mark = complete_mark
             local corner_mark_margin = math.floor((corner_mark_size - corner_mark:getSize().h) / 2)
             local ix = x
-            local iy = y + self.height - math.ceil((self.height - target.height) / 2) - corner_mark_size + corner_mark_margin - (corner_mark:getSize().h / 3)
+            local iy = cover_bottom - corner_mark_size + corner_mark_margin - (corner_mark:getSize().h / 3)
             corner_mark:paintTo(bb, ix, iy)
         elseif self.status == "abandoned" and not self.show_progress_bar then
             corner_mark = abandoned_mark
             local corner_mark_margin = math.floor((corner_mark_size - corner_mark:getSize().h) / 2)
             local ix = x
-            local iy = y + self.height - math.ceil((self.height - target.height) / 2) - corner_mark_size + corner_mark_margin - (corner_mark:getSize().h / 3)
+            local iy = cover_bottom - corner_mark_size + corner_mark_margin - (corner_mark:getSize().h / 3)
             corner_mark:paintTo(bb, ix, iy)
         end
     end
@@ -958,8 +1128,8 @@ function MosaicMenuItem:paintTo(bb, x, y)
                 margin = 0,
                 series_widget_text,
             }
-            local pos_x = x + (self.width / 2) + (target.width / 2) - (series_widget:getSize().w * xmult)
-            local pos_y = y + (self.height - target.height) / 2 + (series_widget:getSize().h * (1 - xmult))
+            local pos_x = x + (self.width / 2) + (cover.width / 2) - (series_widget:getSize().w * xmult)
+            local pos_y = cover_top + (series_widget:getSize().h * (1 - xmult))
             series_widget:paintTo(bb, pos_x, pos_y)
         end
 
@@ -983,8 +1153,7 @@ function MosaicMenuItem:paintTo(bb, x, y)
             progress_widget:setPercentage(percent_done)
             if self.status == "complete" then progress_widget:setPercentage(1) end
             local pos_x = x
-            local pos_y = y + self.height - math.ceil((self.height - target.height) / 2) - corner_mark_size +
-            progress_widget_margin
+            local pos_y = cover_bottom - corner_mark_size + progress_widget_margin
             progress_widget:paintTo(bb, pos_x, pos_y)
             local status_widget = nil
             local status_icon_size = Screen:scaleBySize(17)
@@ -1057,18 +1226,38 @@ function MosaicMenuItem:paintTo(bb, x, y)
                     (pos_y - progress_widget:getSize().h / 3)
                 )
             end
-        elseif is_pathchooser == false then
+        end
+
+        if is_pathchooser == false then
             local progresstxt = nil
             if not BookInfoManager:getSetting("hide_file_info") then
                 progresstxt = (" " .. self.mandatory .. " ") or " ??? "
             elseif self.status ~= "complete" and self.status ~= "abandoned" and self.percent_finished ~= nil then
-                progresstxt = " " .. math.floor(100 * self.percent_finished) .. "% "
-                if BookInfoManager:getSetting("show_pages_read_as_progress") then
-                    local book_info = self.menu.getBookInfo(self.filepath)
-                    local pages = book_info.pages or bookinfo.pages or nil -- default to those in bookinfo db
+                -- Use new progress_text_format setting
+                local progress_text_format = BookInfoManager:getSetting("progress_text_format") or "status_and_percent"
+                local book_info = self.menu.getBookInfo(self.filepath)
+                local pages = book_info.pages or bookinfo.pages or nil
+
+                if progress_text_format == "status_only" then
+                    -- No text, just the progress bar
+                    progresstxt = nil
+                elseif progress_text_format == "status_and_pages" then
+                    -- Show pages only (no percent)
                     if pages ~= nil then
-                        progresstxt = T(("%1/%2 "), Math.round(self.percent_finished * pages), pages)
+                        progresstxt = T(" %1/%2 ", Math.round(self.percent_finished * pages), pages)
+                    else
+                        progresstxt = " " .. math.floor(100 * self.percent_finished) .. "% "
                     end
+                elseif progress_text_format == "status_percent_and_pages" then
+                    -- Show pages with percent
+                    if pages ~= nil then
+                        progresstxt = T(" %1/%2 (%3%) ", Math.round(self.percent_finished * pages), pages, math.floor(100 * self.percent_finished))
+                    else
+                        progresstxt = " " .. math.floor(100 * self.percent_finished) .. "% "
+                    end
+                else
+                    -- Default: status_and_percent - Show percentage only
+                    progresstxt = " " .. math.floor(100 * self.percent_finished) .. "% "
                 end
             end
             if progresstxt ~= nil then
@@ -1078,21 +1267,13 @@ function MosaicMenuItem:paintTo(bb, x, y)
                     alignment = "center",
                     padding = Size.padding.tiny,
                 }
-                local txtprogress_padding = math.max(0, ((self.width * tag_width) - txtprogress_widget_text:getSize().w))
-                local txtprogress_widget_frame = UnderlineContainer:new {
-                    linesize = Screen:scaleBySize(1),
-                    color = Blitbuffer.COLOR_BLACK,
-                    bordersize = 0,
+                local txtprogress_widget_frame = FrameContainer:new {
+                    radius = Size.radius.default,
+                    bordersize = Size.border.thin,
                     padding = 0,
                     margin = 0,
-                    HorizontalGroup:new {
-                        HorizontalSpan:new { width = txtprogress_padding },
-                        txtprogress_widget_text,
-                        LineWidget:new {
-                            dimen = Geom:new { w = Screen:scaleBySize(1), h = txtprogress_widget_text:getSize().h, },
-                            background = Blitbuffer.COLOR_BLACK,
-                        },
-                    }
+                    background = Blitbuffer.COLOR_WHITE,
+                    txtprogress_widget_text,
                 }
                 local txtprogress_widget = AlphaContainer:new {
                     alpha = 1.0,
@@ -1100,8 +1281,13 @@ function MosaicMenuItem:paintTo(bb, x, y)
                 }
                 local progress_widget_margin = math.floor((corner_mark_size - txtprogress_widget:getSize().h) / 2)
                 local pos_x = x
-                local pos_y = y + self.height - math.ceil((self.height - target.height) / 2) - corner_mark_size +
+                local pos_y = cover_bottom - corner_mark_size +
                     progress_widget_margin - (txtprogress_widget:getSize().h / 3)
+                
+                if self.show_progress_bar then
+                    pos_y = pos_y - progress_widget:getSize().h - Screen:scaleBySize(2)
+                end
+
                 txtprogress_widget:paintTo(bb, pos_x, pos_y)
             end
         end
