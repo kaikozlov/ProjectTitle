@@ -5,10 +5,12 @@ local Device = require("device")
 local FileManagerBookInfo = require("apps/filemanager/filemanagerbookinfo")
 local Font = require("ui/font")
 local Geom = require("ui/geometry")
+local GestureRange = require("ui/gesturerange")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan = require("ui/widget/horizontalspan")
 local ImageWidget = require("ui/widget/imagewidget")
+local InputContainer = require("ui/widget/container/inputcontainer")
 local LeftContainer = require("ui/widget/container/leftcontainer")
 local LineWidget = require("ui/widget/linewidget")
 local ProgressWidget = require("ui/widget/progresswidget")
@@ -291,10 +293,27 @@ function AltBookStatusWidget:genBookInfoGroup()
         book_meta,
     })
 
-    return CenterContainer:new {
-        dimen = Geom:new { w = screen_width, h = height },
-        book_info_group,
-    }
+    local meta_container
+    if not self.readonly then
+        meta_container = InputContainer:new {
+            CenterContainer:new {
+                dimen = Geom:new { w = screen_width, h = height },
+                book_info_group,
+            }
+        }
+        meta_container:registerTouchZones({ {
+            id = "meta_tap",
+            ges = "tap",
+            screen_zone = { ratio_x = 0, ratio_y = 0, ratio_w = 1, ratio_h = 0.5 },
+            handler = function(ges) self:onClose() end,
+        }, })
+    else
+        meta_container = CenterContainer:new {
+            dimen = Geom:new { w = screen_width, h = height },
+            book_info_group,
+        }
+    end
+    return meta_container
 end
 
 function AltBookStatusWidget:genStatisticsGroup(width)

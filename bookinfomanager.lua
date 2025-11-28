@@ -1002,7 +1002,7 @@ Do you want to prune the cache of removed books?]]
 
     while true do
         info = InfoMessage:new { text = _("Looking for books to index…") }
-        if not automatic_mode then UIManager:show(info) end
+        UIManager:show(info)
         UIManager:forceRePaint()
         completed, files = Trapper:dismissableRunInSubprocess(function()
             filepaths = findFilesInDir(path, recursive)
@@ -1015,10 +1015,13 @@ Do you want to prune the cache of removed books?]]
             end
         elseif not files or #files == 0 then
             UIManager:close(info)
-            if not automatic_mode then info = InfoMessage:new { text = _("No books were found.") } end
-            UIManager:show(info)
+            if not automatic_mode then
+                info = InfoMessage:new { text = _("No books were found.") }
+                UIManager:show(info)
+            end
             return
         else
+            UIManager:close(info)
             break
         end
     end

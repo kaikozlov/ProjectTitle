@@ -304,8 +304,10 @@ function CoverBrowser:init()
     if home_dir then logger.info(ptdbg.logprefix, "Home directory is set to: ", home_dir) end
     if home_dir and util.pathExists(home_dir) and BookInfoManager:getSetting("autoscan_on_eject") then
         local cover_specs = { max_cover_w = 1, max_cover_h = 1, }
-        Trapper:wrap(function()
-            BookInfoManager:extractBooksInDirectory(home_dir, cover_specs, true)
+        UIManager:tickAfterNext(function()
+            Trapper:wrap(function()
+                BookInfoManager:extractBooksInDirectory(home_dir, cover_specs, true)
+            end)
         end)
     end
 
