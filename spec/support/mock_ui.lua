@@ -362,4 +362,31 @@ local function setup_mocks()
     package.loaded['titlebar'] = nil
 end
 
-return setup_mocks
+-- Helper to create a default render context for tests
+-- This matches the structure from CoverMenu:buildRenderContext()
+local function default_render_context()
+    return {
+        -- Display settings
+        hide_file_info = nil,
+        show_progress_in_mosaic = nil,
+        show_mosaic_titles = nil,
+        progress_text_format = "status_and_percent",
+        series_mode = nil,
+        show_tags = nil,
+        show_name_grid_folders = nil,
+        -- Folder cover settings
+        disable_auto_foldercovers = nil,
+        use_stacked_foldercovers = nil,
+        -- UI settings
+        force_focus_indicator = nil,
+        -- Computed values
+        is_pathchooser = false,
+        is_touch_device = true,
+    }
+end
+
+return setmetatable({
+    default_render_context = default_render_context,
+}, {
+    __call = function(_, ...) return setup_mocks(...) end
+})

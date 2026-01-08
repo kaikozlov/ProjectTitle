@@ -513,7 +513,7 @@ function MosaicMenuItem:update()
             -- check for folder image
             subfolder_cover_image = ptutil.getFolderCover(self.filepath, dimen.w, dimen.h)
             -- check for books with covers in the subfolder
-            if subfolder_cover_image == nil and not BookInfoManager:getSetting("disable_auto_foldercovers") then
+            if subfolder_cover_image == nil and not self.menu.render_context.disable_auto_foldercovers then
                 subfolder_cover_image = ptutil.getSubfolderCoverImages(self.filepath, max_img_w, max_img_h)
             end
             -- use stock folder icon
@@ -584,7 +584,7 @@ function MosaicMenuItem:update()
             }
 
             -- use non-alpha styling when focus indicator is involved
-            if not Device:isTouchDevice() or BookInfoManager:getSetting("force_focus_indicator") then
+            if not self.menu.render_context.is_touch_device or self.menu.render_context.force_focus_indicator then
                 directory = FrameContainer:new {
                     bordersize = 0,
                     padding = 0,
@@ -621,7 +621,7 @@ function MosaicMenuItem:update()
             }
 
             -- use non-alpha styling when focus indicator is involved
-            if not Device:isTouchDevice() or BookInfoManager:getSetting("force_focus_indicator") then
+            if not self.menu.render_context.is_touch_device or self.menu.render_context.force_focus_indicator then
                 nbitems_frame_container = FrameContainer:new {
                     bordersize = 0,
                     padding = 0,
@@ -643,7 +643,7 @@ function MosaicMenuItem:update()
                 dimen = dimen,
                 CenterContainer:new { dimen = dimen, subfolder_cover_image },
             }
-            if BookInfoManager:getSetting("show_name_grid_folders") then
+            if self.menu.render_context.show_name_grid_folders then
                 table.insert(widget_parts, TopContainer:new { dimen = dimen, directory })
                 table.insert(widget_parts, BottomContainer:new { dimen = dimen, nbitems })
             end
@@ -771,7 +771,7 @@ function MosaicMenuItem:update()
                 cover_bb_used = true
                 local frame_radius = self.show_progress_bar and Size.radius.default or 0
                 local border_total = Size.border.thin * 2
-                local show_titles_setting = BookInfoManager:getSetting("show_mosaic_titles")
+                local show_titles_setting = self.menu.render_context.show_mosaic_titles
                 local title_text = not bookinfo.ignore_meta and bookinfo.title or nil
                 local authors_text = not bookinfo.ignore_meta and bookinfo.authors or nil
                 
@@ -1099,7 +1099,7 @@ function MosaicMenuItem:paintTo(bb, x, y)
 
     local bookinfo = BookInfoManager:getBookInfo(self.filepath, false)
     if bookinfo and self.init_done then
-        local series_mode = BookInfoManager:getSetting("series_mode")
+        local series_mode = self.menu.render_context.series_mode
         -- suppress showing series if index is "0"
         local show_series = bookinfo.series and bookinfo.series_index and bookinfo.series_index ~= 0
         if series_mode == "series_in_separate_line" and show_series and is_pathchooser == false then
@@ -1231,11 +1231,11 @@ function MosaicMenuItem:paintTo(bb, x, y)
 
         if is_pathchooser == false then
             local progresstxt = nil
-            if not BookInfoManager:getSetting("hide_file_info") then
+            if not self.menu.render_context.hide_file_info then
                 progresstxt = (" " .. self.mandatory .. " ") or " ??? "
             elseif self.status ~= "complete" and self.status ~= "abandoned" and self.percent_finished ~= nil then
                 -- Use new progress_text_format setting
-                local progress_text_format = BookInfoManager:getSetting("progress_text_format") or "status_and_percent"
+                local progress_text_format = self.menu.render_context.progress_text_format
                 local book_info = self.menu.getBookInfo(self.filepath)
                 local pages = book_info.pages or bookinfo.pages or nil
 

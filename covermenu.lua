@@ -76,8 +76,36 @@ end
 -- in the real Menu class or instance
 local CoverMenu = {}
 
+-- Build a render context containing all settings needed for rendering
+-- This avoids repeated getSetting() calls during the render loop
+function CoverMenu:buildRenderContext()
+    return {
+        -- Display settings
+        hide_file_info = BookInfoManager:getSetting("hide_file_info"),
+        show_progress_in_mosaic = BookInfoManager:getSetting("show_progress_in_mosaic"),
+        show_mosaic_titles = BookInfoManager:getSetting("show_mosaic_titles"),
+        progress_text_format = BookInfoManager:getSetting("progress_text_format") or "status_and_percent",
+        series_mode = BookInfoManager:getSetting("series_mode"),
+        show_tags = BookInfoManager:getSetting("show_tags"),
+        show_name_grid_folders = BookInfoManager:getSetting("show_name_grid_folders"),
+        -- Folder cover settings
+        disable_auto_foldercovers = BookInfoManager:getSetting("disable_auto_foldercovers"),
+        use_stacked_foldercovers = BookInfoManager:getSetting("use_stacked_foldercovers"),
+        -- UI settings
+        force_focus_indicator = BookInfoManager:getSetting("force_focus_indicator"),
+        -- Computed values
+        is_pathchooser = ptutil.isPathChooser(self),
+        is_touch_device = Device:isTouchDevice(),
+    }
+end
+
 function CoverMenu:updateItems(select_number, no_recalculate_dimen)
     local timer = ptdbg:new()
+
+    -- Build render context with all settings needed for this render pass
+    -- This avoids repeated getSetting() calls in hot paths
+    self.render_context = self:buildRenderContext()
+
     -- As done in Menu:updateItems()
     local old_dimen = self.dimen and self.dimen:copy()
     -- self.layout must be updated for focusmanager

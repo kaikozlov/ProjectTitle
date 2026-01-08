@@ -1,12 +1,12 @@
 require 'busted.runner'()
-local setup_mocks = require("spec.support.mock_ui")
+local mock_ui = require("spec.support.mock_ui")
 
 describe("ListMenu", function()
     local ListMenu
     local ListMenuItem
     
     setup(function()
-        setup_mocks()
+        mock_ui()
         
         -- Load the module under test
         -- We need to capture the return value which is ListMenu
@@ -32,7 +32,8 @@ describe("ListMenu", function()
                 page = 1,
                 files_per_page = 7,
                 path_items = {},
-                path = "/some/path"
+                path = "/some/path",
+                render_context = mock_ui.default_render_context()
             }
             -- Mixin ListMenu methods
             for k, v in pairs(ListMenu) do menu[k] = v end
@@ -45,6 +46,7 @@ describe("ListMenu", function()
         end)
         
         it("builds UI items correctly", function()
+            local render_context = mock_ui.default_render_context()
             local menu = {
                 width = 600,
                 screen_w = 600,
@@ -62,7 +64,8 @@ describe("ListMenu", function()
                 getBookInfo = function() return { been_opened = false, status = "unread" } end,
                 item_dimen = { copy = function() return { w = 100, h = 20 } end },
                 item_width = 100,
-                item_height = 20
+                item_height = 20,
+                render_context = render_context
             }
             -- Mixin ListMenu methods
             for k, v in pairs(ListMenu) do menu[k] = v end

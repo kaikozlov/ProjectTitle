@@ -1,5 +1,5 @@
 require 'busted.runner'()
-local setup_mocks = require("spec.support.mock_ui")
+local mock_ui = require("spec.support.mock_ui")
 
 describe("MosaicMenu Progress Indicators", function()
     local MosaicMenu
@@ -8,7 +8,7 @@ describe("MosaicMenu Progress Indicators", function()
     local DocSettings
     
     setup(function()
-        setup_mocks()
+        mock_ui()
         
         -- Force reload of mosaicmenu to pick up mocked T
         package.loaded["mosaicmenu"] = nil
@@ -41,6 +41,10 @@ describe("MosaicMenu Progress Indicators", function()
     end)
     
     it("shows both progress bar and text progress when configured", function()
+        local render_context = mock_ui.default_render_context()
+        render_context.progress_text_format = "status_percent_and_pages"
+        render_context.hide_file_info = true
+        
         local menu = {
             width = 600,
             screen_w = 600,
@@ -71,6 +75,7 @@ describe("MosaicMenu Progress Indicators", function()
             nb_cols_portrait = 3,
             nb_rows_landscape = 1,
             nb_cols_landscape = 3,
+            render_context = render_context
         }
         
         -- Mixin MosaicMenu methods
@@ -78,22 +83,6 @@ describe("MosaicMenu Progress Indicators", function()
         
         -- Setup mocks for this test
         ptutil.showProgressBar = function() return 200, true end -- Show progress bar
-        BookInfoManager.getSetting = function(self, key)
-            -- Handle both dot and colon calls if necessary, but usually it's consistent.
-            -- If called with colon, first arg is self.
-            -- If called with dot, first arg is key.
-            -- But here we see it's called with table as first arg, so it's colon call.
-            -- But wait, if I define it as function(key) and it receives table, then key is table.
-            -- So I need function(self, key).
-            -- But if I define it as function(self, key), and it's called with dot, self is key.
-            -- Let's just check the type of the first arg.
-            local k = key
-            if type(self) == "string" then k = self end
-            
-            if k == "progress_text_format" then return "status_percent_and_pages" end
-            if k == "hide_file_info" then return true end -- Show progress text instead of file info
-            return nil
-        end
         
         -- Initialize menu (creates progress_widget)
         menu:_recalculateDimen()

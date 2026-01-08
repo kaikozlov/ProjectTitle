@@ -1,5 +1,5 @@
 require 'busted.runner'()
-local setup_mocks = require("spec.support.mock_ui")
+local mock_ui = require("spec.support.mock_ui")
 
 describe("MosaicMenu Title Fallback Whitespace", function()
     local MosaicMenu
@@ -7,7 +7,7 @@ describe("MosaicMenu Title Fallback Whitespace", function()
     local ptutilMock
     
     setup(function()
-        setup_mocks()
+        mock_ui()
         
         -- Mock BookInfoManager
         BookInfoManagerMock = {
@@ -71,6 +71,10 @@ describe("MosaicMenu Title Fallback Whitespace", function()
     end)
     
     it("uses filename as fallback when title is whitespace and show_mosaic_titles is true", function()
+        local render_context = mock_ui.default_render_context()
+        render_context.show_mosaic_titles = true
+        render_context.show_name_grid_folders = true
+        
         local menu = {
             width = 600,
             screen_w = 600,
@@ -92,7 +96,8 @@ describe("MosaicMenu Title Fallback Whitespace", function()
             item_height = 100,
             _do_cover_images = true,
             _do_hint_opened = false,
-            menu = {}
+            menu = {},
+            render_context = render_context
         }
         -- Mixin MosaicMenu methods
         for k, v in pairs(MosaicMenu) do menu[k] = v end
@@ -266,6 +271,10 @@ describe("MosaicMenu Title Fallback Whitespace", function()
             }
         end
         
+        local render_context = mock_ui.default_render_context()
+        render_context.show_mosaic_titles = true
+        render_context.show_name_grid_folders = true
+        
         local long_name = string.rep("a", 70) .. ".pdf"
         local menu = {
             width = 600,
@@ -288,7 +297,8 @@ describe("MosaicMenu Title Fallback Whitespace", function()
             item_height = 300,
             _do_cover_images = true,
             _do_hint_opened = false,
-            menu = {}
+            menu = {},
+            render_context = render_context
         }
         -- Mixin MosaicMenu methods
         for k, v in pairs(MosaicMenu) do menu[k] = v end
