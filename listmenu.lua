@@ -222,7 +222,7 @@ function ListMenuItem:update()
             -- check for folder image
             subfolder_cover_image = ptutil.getFolderCover(self.filepath, max_img_w * 0.82, max_img_h, self.entry.pt_cover_path)
             -- check for books with covers in the subfolder
-            if subfolder_cover_image == nil and not BookInfoManager:getSetting("disable_auto_foldercovers") then
+            if subfolder_cover_image == nil and not self.menu.render_context.disable_auto_foldercovers then
                 subfolder_cover_image = ptutil.getSubfolderCoverImages(self.filepath, max_img_w, max_img_h)
             end
             -- use stock folder icon
@@ -602,12 +602,12 @@ function ListMenuItem:update()
             end
 
             -- show progress text, page text, and/or file info text
-            if BookInfoManager:getSetting("hide_file_info") then
+            if self.menu.render_context.hide_file_info then
                 progress_str, percent_str, pages_str, pages_left_str = ptutil.formatProgressText(status, bookinfo, pages,
                     draw_progressbar, percent_finished, progress_strings)
 
                 -- Get progress text format preference
-                local progress_text_format = BookInfoManager:getSetting("progress_text_format") or "status_and_percent"
+                local progress_text_format = self.menu.render_context.progress_text_format
 
                 -- Add tight spacing before progress bar if it exists
                 if draw_progressbar and progress_text_format ~= "status_only" then
@@ -765,9 +765,9 @@ function ListMenuItem:update()
             local wtags_avail_height = 0
             local wmetadata_safe_width = 0
             local title, authors, series, tags, author_series
-            local series_mode = BookInfoManager:getSetting("series_mode")
+            local series_mode = self.menu.render_context.series_mode
             local show_series = bookinfo.series and bookinfo.series_index and not bookinfo.ignore_meta
-            local show_tags = BookInfoManager:getSetting("show_tags") and not self.do_filename_only and not bookinfo.ignore_meta and bookinfo.keywords and bookinfo.keywords ~= ""
+            local show_tags = self.menu.render_context.show_tags and not self.do_filename_only and not bookinfo.ignore_meta and bookinfo.keywords and bookinfo.keywords ~= ""
 
             -- whether to use or not title and authors
             -- (We wrap each metadata text with BD.auto() to get for each of them
@@ -1340,7 +1340,7 @@ function ListMenu:_recalculateDimen()
 
     self.others_height = self.others_height + (Size.line.thin * self.perpage) -- lines between items
     -- account for extra margins on devices with focus indicator enabled
-    if not Device:isTouchDevice() or BookInfoManager:getSetting("force_focus_indicator") then
+    if not self.render_context.is_touch_device or self.render_context.force_focus_indicator then
         self.others_height = self.others_height + (Screen:scaleBySize(3) * self.perpage)
     end
     self.others_height = self.others_height + Screen:scaleBySize(3) -- bottom padding
@@ -1418,7 +1418,7 @@ function ListMenu:_updateItemsBuildUI()
         local is_boundary_crossed = true
         if idx > 1 then
             -- add focus indicator padding only for devices that need it
-            if not Device:isTouchDevice() or BookInfoManager:getSetting("force_focus_indicator") then
+            if not self.render_context.is_touch_device or self.render_context.force_focus_indicator then
                 table.insert(self.item_group, VerticalSpan:new { width = Screen:scaleBySize(3) })
             end
             is_boundary_crossed = (index - 1 >= self.recent_boundary_index + 1)

@@ -1,15 +1,16 @@
 require 'busted.runner'()
-local setup_mocks = require("spec.support.mock_ui")
+local mock_ui = require("spec.support.mock_ui")
 
 describe("ListMenu Structure", function()
     local ListMenu
     
     setup(function()
-        setup_mocks()
+        mock_ui()
         ListMenu = require("listmenu")
     end)
     
     it("places details in a BottomContainer -> RightContainer structure", function()
+        local render_context = mock_ui.default_render_context()
         local menu = {
             width = 600,
             screen_w = 600,
@@ -31,7 +32,8 @@ describe("ListMenu Structure", function()
             item_dimen = { copy = function() return { w = 600, h = 100 } end },
             item_width = 600,
             item_height = 100,
-            cover_specs = false
+            cover_specs = false,
+            render_context = render_context
         }
         
         -- Mixin ListMenu methods
