@@ -111,6 +111,12 @@ end
 
 local max_cover_dimen = 600 -- tested 400, 600, and 800
 
+-- LRU Cover Cache for decompressed cover images
+-- Avoids repeated zstd decompression for recently viewed covers
+local COVER_CACHE_SIZE = 25  -- ~35MB worst case at 1.4MB per cover
+local cover_cache = {}       -- filepath -> { bookinfo = {...}, last_access = timestamp }
+local cover_cache_order = {} -- ordered list of filepaths for LRU eviction
+
 -- Build our most often used SQL queries according to columns
 local BOOKINFO_INSERT_SQL = "INSERT OR REPLACE INTO bookinfo " ..
     "(" .. table.concat(BOOKINFO_COLS_SET, ",") .. ") " ..
@@ -150,6 +156,84 @@ function BookInfoManager:init()
     self.use_legacy_image_scaling = G_reader_settings:isTrue("legacy_image_scaling")
     -- We will use a temporary directory for crengine cache while indexing
     self.tmpcr3cache = DataStorage:getDataDir() .. "/cache/tmpcr3cache"
+end
+
+-- Cover Cache Management
+-- Returns cached bookinfo with cover if available, nil otherwise
+function BookInfoManager:getCachedCover(filepath)
+    local cached = cover_cache[filepath]
+    if cached then
+        -- Update access time for LRU tracking
+        cached.last_access = os.time()
+        return cached.bookinfo
+    end
+    return nil
+end
+
+-- Returns true if the filepath has a cached cover (does not update access time)
+function BookInfoManager:isCoverCached(filepath)
+    return cover_cache[filepath] ~= nil
+end
+
+-- Adds a bookinfo with cover to the cache, evicting oldest if at capacity
+function BookInfoManager:cacheCover(filepath, bookinfo)
+    -- Don't cache if no cover
+    if not bookinfo or not bookinfo.cover_bb then
+        return
+    end
+
+    -- If already in cache, just update access time
+    if cover_cache[filepath] then
+        cover_cache[filepath].last_access = os.time()
+        return
+    end
+
+    -- Evict oldest entry if at capacity
+    if #cover_cache_order >= COVER_CACHE_SIZE then
+        local oldest_path = table.remove(cover_cache_order, 1)
+        local oldest = cover_cache[oldest_path]
+        if oldest and oldest.bookinfo and oldest.bookinfo.cover_bb then
+            -- Free the blitbuffer to release memory
+            oldest.bookinfo.cover_bb:free()
+        end
+        cover_cache[oldest_path] = nil
+    end
+
+    -- Add to cache
+    cover_cache[filepath] = {
+        bookinfo = bookinfo,
+        last_access = os.time()
+    }
+    table.insert(cover_cache_order, filepath)
+end
+
+-- Clears the entire cover cache (call on settings change, etc.)
+function BookInfoManager:clearCoverCache()
+    for filepath, cached in pairs(cover_cache) do
+        if cached.bookinfo and cached.bookinfo.cover_bb then
+            cached.bookinfo.cover_bb:free()
+        end
+    end
+    cover_cache = {}
+    cover_cache_order = {}
+end
+
+-- Removes a specific entry from the cover cache
+function BookInfoManager:invalidateCachedCover(filepath)
+    local cached = cover_cache[filepath]
+    if cached then
+        if cached.bookinfo and cached.bookinfo.cover_bb then
+            cached.bookinfo.cover_bb:free()
+        end
+        cover_cache[filepath] = nil
+        -- Remove from order list
+        for i, path in ipairs(cover_cache_order) do
+            if path == filepath then
+                table.remove(cover_cache_order, i)
+                break
+            end
+        end
+    end
 end
 
 -- DB management
@@ -369,6 +453,14 @@ function BookInfoManager:getBookInfo(filepath, get_cover)
         }
     end
 
+    -- Check cover cache first when cover is requested
+    if get_cover then
+        local cached = self:getCachedCover(filepath)
+        if cached then
+            return cached
+        end
+    end
+
     self:openDbConnection()
     local row = self.get_stmt:bind(directory, filename):step()
     -- NOTE: We do not reset right now because we'll be querying a BLOB,
@@ -421,6 +513,12 @@ function BookInfoManager:getBookInfo(filepath, get_cover)
     end
 
     self.get_stmt:clearbind():reset() -- get ready for next query
+
+    -- Cache the bookinfo if we fetched a cover
+    if get_cover and bookinfo.cover_bb then
+        self:cacheCover(filepath, bookinfo)
+    end
+
     return bookinfo
 end
 
