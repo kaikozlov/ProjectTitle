@@ -52,12 +52,17 @@ describe("MosaicMenu Title Fallback Whitespace", function()
             separator = { en_dash = "-" },
             title_serif = "font",
             good_serif = "font",
+            good_sans = "font",
             mediumBlackLine = function() return {} end,
             thinGrayLine = function() return {} end,
             thinWhiteLine = function() return {} end,
             estimateFontSize = function(params) return params.max_size or 20 end,
             isTextQuickFit = function() return true end,
-            clearFontSizeCache = function() end
+            clearFontSizeCache = function() end,
+            -- Font fallback function (for Issue #146 fix)
+            getFontFace = function(font_name, size)
+                return { size = size, name = font_name }
+            end
         }
         package.loaded["ptutil"] = ptutilMock
         

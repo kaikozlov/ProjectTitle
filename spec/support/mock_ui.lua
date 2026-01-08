@@ -348,6 +348,12 @@ local function setup_mocks()
         mediumBlackLine = function() return {} end,
         thinGrayLine = function() return {} end,
         thinWhiteLine = function() return {} end,
+        -- Font fallback function (for Issue #146 fix)
+        getFontFace = function(font_name, size)
+            return { size = size, name = font_name }
+        end,
+        -- Font size estimation cache functions
+        clearFontSizeCache = function() end,
         -- Font sizing functions (Phase 3)
         estimateFontSize = function(params)
             return params.max_size or 26
@@ -355,7 +361,6 @@ local function setup_mocks()
         isTextQuickFit = function(params)
             return (#(params.text or "")) < 20
         end,
-        clearFontSizeCache = function() end,
     }
     
     -- Mock G_reader_settings

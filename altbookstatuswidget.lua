@@ -49,7 +49,7 @@ end
 function AltBookStatusWidget:genHeader(title)
     local header_title = TextWidget:new {
         text = title,
-        face = Font:getFace(ptutil.good_sans, ptutil.bookstatus_defaults.header_font_size),
+        face = ptutil.getFontFace(ptutil.good_sans, ptutil.bookstatus_defaults.header_font_size),
         fgcolor = Blitbuffer.COLOR_BLACK,
     }
 
@@ -184,7 +184,7 @@ function AltBookStatusWidget:genBookInfoGroup()
     local author_series = TextBoxWidget:new {
         text = author_series_text,
         lang = lang,
-        face = Font:getFace(ptutil.good_serif, ptutil.bookstatus_defaults.metainfo_font_size),
+        face = ptutil.getFontFace(ptutil.good_serif, ptutil.bookstatus_defaults.metainfo_font_size),
         width = text_width,
         height_adjust = true,
         height_overflow_show_ellipsis = true,
@@ -211,7 +211,7 @@ function AltBookStatusWidget:genBookInfoGroup()
     local chapter_title = TextBoxWidget:new {
         text = chapter_text,
         lang = lang,
-        face = Font:getFace(ptutil.good_serif_it, ptutil.bookstatus_defaults.metainfo_font_size),
+        face = ptutil.getFontFace(ptutil.good_serif_it, ptutil.bookstatus_defaults.metainfo_font_size),
         width = text_width,
         height_adjust = true,
         height_overflow_show_ellipsis = true,
@@ -242,7 +242,7 @@ function AltBookStatusWidget:genBookInfoGroup()
         height = max_title_height,
         height_adjust = true,
         height_overflow_show_ellipsis = true,
-        face = Font:getFace(ptutil.title_serif, ptutil.bookstatus_defaults.title_font_size),
+        face = ptutil.getFontFace(ptutil.title_serif, ptutil.bookstatus_defaults.title_font_size),
         alignment = "center",
     }
 
@@ -331,21 +331,21 @@ function AltBookStatusWidget:genStatisticsGroup(width)
             dimen = Geom:new{ w = tile_width, h = tile_height },
             TextWidget:new{
                 text = _("Days"),
-                face = Font:getFace(ptutil.good_serif_bold, ptutil.bookstatus_defaults.metainfo_font_size),
+                face = ptutil.getFontFace(ptutil.good_serif_bold, ptutil.bookstatus_defaults.metainfo_font_size),
             },
         },
         CenterContainer:new{
             dimen = Geom:new{ w = tile_width, h = tile_height },
             TextWidget:new{
                 text = _("Time"),
-                face = Font:getFace(ptutil.good_serif_bold, ptutil.bookstatus_defaults.metainfo_font_size),
+                face = ptutil.getFontFace(ptutil.good_serif_bold, ptutil.bookstatus_defaults.metainfo_font_size),
             },
         },
         CenterContainer:new{
             dimen = Geom:new{ w = tile_width, h = tile_height },
             TextWidget:new{
                 text = _("Read pages"),
-                face = Font:getFace(ptutil.good_serif_bold, ptutil.bookstatus_defaults.metainfo_font_size),
+                face = ptutil.getFontFace(ptutil.good_serif_bold, ptutil.bookstatus_defaults.metainfo_font_size),
             }
         }
     }
@@ -355,7 +355,7 @@ function AltBookStatusWidget:genStatisticsGroup(width)
             dimen = Geom:new{ w = tile_width, h = tile_height },
             TextWidget:new{
                 text = self:getStatDays(),
-                face = Font:getFace(ptutil.good_serif, ptutil.bookstatus_defaults.metainfo_font_size),
+                face = ptutil.getFontFace(ptutil.good_serif, ptutil.bookstatus_defaults.metainfo_font_size),
                 fgcolor = Blitbuffer.COLOR_GRAY_2,
             },
         },
@@ -363,7 +363,7 @@ function AltBookStatusWidget:genStatisticsGroup(width)
             dimen = Geom:new{ w = tile_width, h = tile_height },
             TextWidget:new{
                 text = self:getStatHours(),
-                face = Font:getFace(ptutil.good_serif, ptutil.bookstatus_defaults.metainfo_font_size),
+                face = ptutil.getFontFace(ptutil.good_serif, ptutil.bookstatus_defaults.metainfo_font_size),
                 fgcolor = Blitbuffer.COLOR_GRAY_2,
             },
         },
@@ -371,7 +371,7 @@ function AltBookStatusWidget:genStatisticsGroup(width)
             dimen = Geom:new{ w = tile_width, h = tile_height },
             TextWidget:new{
                 text = self:getStatReadPages(),
-                face = Font:getFace(ptutil.good_serif, ptutil.bookstatus_defaults.metainfo_font_size),
+                face = ptutil.getFontFace(ptutil.good_serif, ptutil.bookstatus_defaults.metainfo_font_size),
                 fgcolor = Blitbuffer.COLOR_GRAY_2,
             }
         }
