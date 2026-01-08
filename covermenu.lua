@@ -93,6 +93,10 @@ function CoverMenu:buildRenderContext()
         use_stacked_foldercovers = BookInfoManager:getSetting("use_stacked_foldercovers"),
         -- UI settings
         force_focus_indicator = BookInfoManager:getSetting("force_focus_indicator"),
+        -- Progress bar settings (used by ptutil.showProgressBar)
+        force_max_progressbars = BookInfoManager:getSetting("force_max_progressbars"),
+        force_no_progressbars = BookInfoManager:getSetting("force_no_progressbars"),
+        show_pages_read_as_progress = BookInfoManager:getSetting("show_pages_read_as_progress"),
         -- Computed values
         is_pathchooser = ptutil.isPathChooser(self),
         is_touch_device = Device:isTouchDevice(),
@@ -298,7 +302,12 @@ function CoverMenu:onCloseWidget()
 end
 
 function CoverMenu:genItemTable(dirs, files, path)
-    is_pathchooser = ptutil.isPathChooser(self)
+    -- Use cached value from render_context if available, otherwise compute it
+    if self.render_context and self.render_context.is_pathchooser ~= nil then
+        is_pathchooser = self.render_context.is_pathchooser
+    else
+        is_pathchooser = ptutil.isPathChooser(self)
+    end
     self.recent_boundary_index = 0
     self.meta_show_opened = nil
 
@@ -641,7 +650,10 @@ function CoverMenu:menuInit()
     -- Initialize render_context early since _recalculateDimen() may be called during init
     -- (before updateItems() which normally builds it)
     self.render_context = CoverMenu.buildRenderContext(self)
-    
+
+    -- Initialize widget pool for reusing common widgets
+    self.widget_pool = ptutil.WidgetPool:new({ max_per_type = 30 })
+
     CoverMenu._Menu_init_orig(self)
 
     -- pagination controls
@@ -770,7 +782,12 @@ function CoverMenu:menuInit()
     }
 
     -- test to see what style to draw (pathchooser vs one of our fancy modes)
-    is_pathchooser = ptutil.isPathChooser(self)
+    -- Use cached value from render_context if available, otherwise compute it
+    if self.render_context and self.render_context.is_pathchooser ~= nil then
+        is_pathchooser = self.render_context.is_pathchooser
+    else
+        is_pathchooser = ptutil.isPathChooser(self)
+    end
 
     if self.item_table.current then
         self.page = self:getPageNumber(self.item_table.current)

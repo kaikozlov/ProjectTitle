@@ -161,7 +161,12 @@ function ListMenuItem:update()
     end
 
     -- test to see what style to draw (pathchooser vs one of our fancy modes)
-    is_pathchooser = ptutil.isPathChooser(self)
+    -- Use cached value from render_context if available, otherwise compute it
+    if self.menu and self.menu.render_context and self.menu.render_context.is_pathchooser ~= nil then
+        is_pathchooser = self.menu.render_context.is_pathchooser
+    else
+        is_pathchooser = ptutil.isPathChooser(self)
+    end
 
     self.is_directory = not (self.entry.is_file or self.entry.file)
     if self.is_directory then
@@ -305,7 +310,14 @@ function ListMenuItem:update()
         self.file_deleted = self.entry.dim -- entry with deleted file from History or selected file from FM
         local fgcolor = self.file_deleted and Blitbuffer.COLOR_DARK_GRAY or nil
 
-        local bookinfo = BookInfoManager:getBookInfo(self.filepath, self.do_cover_image)
+        -- Check for pre-fetched bookinfo from batch query first
+        local bookinfo = nil
+        if self.menu._bookinfo_batch and self.menu._bookinfo_batch[self.filepath] then
+            bookinfo = self.menu._bookinfo_batch[self.filepath]
+        else
+            -- Fallback to individual query if not in batch
+            bookinfo = BookInfoManager:getBookInfo(self.filepath, self.do_cover_image)
+        end
 
         if bookinfo and self.do_cover_image and not bookinfo.ignore_cover and not self.file_deleted then
             if bookinfo.cover_fetched then
@@ -454,7 +466,7 @@ function ListMenuItem:update()
                 pages = book_info.pages
             end
 
-            local est_page_count, draw_progressbar = ptutil.showProgressBar(pages)
+            local est_page_count, draw_progressbar = ptutil.showProgressBar(pages, self.menu.render_context)
             self.pages = est_page_count
             -- bookinfo.pages = est_page_count
 
@@ -1277,13 +1289,22 @@ end
 
 -- As done in MenuItem
 function ListMenuItem:onFocus()
-    ptutil.onFocus(self._underline_container)
+    ptutil.onFocus(self._underline_container, self.menu.render_context)
     return true
 end
 
 function ListMenuItem:onUnfocus()
-    ptutil.onUnfocus(self._underline_container)
+    ptutil.onUnfocus(self._underline_container, self.menu.render_context)
     return true
+end
+
+-- Clean up widgets when this item is destroyed
+function ListMenuItem:onCloseWidget()
+    -- Free the main widget container
+    if self._underline_container and self._underline_container[1] then
+        self._underline_container[1]:free()
+        self._underline_container[1] = nil
+    end
 end
 
 -- The transient color inversions done in MenuItem:onTapSelect
@@ -1319,7 +1340,12 @@ function ListMenu:_recalculateDimen()
     self.others_height = 0
 
     -- test to see what style to draw (pathchooser vs one of our fancy modes)
-    is_pathchooser = ptutil.isPathChooser(self)
+    -- Use cached value from render_context if available, otherwise compute it
+    if self.render_context and self.render_context.is_pathchooser ~= nil then
+        is_pathchooser = self.render_context.is_pathchooser
+    else
+        is_pathchooser = ptutil.isPathChooser(self)
+    end
 
     if self.title_bar then -- Menu:init() has been done
         if not self.is_borderless then
@@ -1412,6 +1438,22 @@ function ListMenu:_updateItemsBuildUI()
     local idx_offset = (self.page - 1) * self.perpage
     local select_number
     if self.recent_boundary_index == nil then self.recent_boundary_index = 0 end
+
+    -- Batch pre-fetch bookinfo for all items on this page to reduce DB queries
+    local filepaths = {}
+    for idx = 1, self.perpage do
+        local index = idx_offset + idx
+        local entry = self.item_table[index]
+        if entry and entry.path and not entry.is_go_up then
+            table.insert(filepaths, entry.path)
+        end
+    end
+    local bookinfo_batch = {}
+    if #filepaths > 0 and self._do_cover_images then
+        bookinfo_batch = BookInfoManager:getBookInfoBatch(filepaths, self._do_cover_images) or {}
+    end
+    self._bookinfo_batch = bookinfo_batch  -- Store for items to access
+
     for idx = 1, self.perpage do
         local itm_timer = ptdbg:new()
         local index = idx_offset + idx

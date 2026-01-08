@@ -16,7 +16,6 @@ local Screen = Device.screen
 local BD = require("ui/bidi")
 local T = require("ffi/util").template
 local DataStorage = require("datastorage")
-local SQ3 = require("lua-ljsqlite3/init")
 local ffiUtil = require("ffi/util")
 local util = require("util")
 local lfs = require("libs/libkoreader-lfs")
@@ -360,10 +359,17 @@ function ptutil.getFolderCover(filepath, max_img_w, max_img_h)
 end
 
 local function query_cover_paths(folder, include_subfolders)
-    local db_conn = SQ3.open(DataStorage:getSettingsDir() .. "/PT_bookinfo_cache.sqlite3")
-    db_conn:set_busy_timeout(5000)
-
     if not util.directoryExists(folder) then return nil end
+
+    -- Reuse BookInfoManager's database connection instead of opening our own
+    BookInfoManager:openDbConnection()
+    local db_conn = BookInfoManager.db_conn
+
+    -- If BookInfoManager connection is unavailable, we can't proceed safely
+    -- (Opening our own connection would leak since we wouldn't track it)
+    if not db_conn then
+        return nil
+    end
 
     local query
     folder = folder:gsub("'", "''")
@@ -383,7 +389,7 @@ local function query_cover_paths(folder, include_subfolders)
     end
 
     local res = db_conn:exec(query)
-    db_conn:close()
+    -- Don't close - we're reusing BookInfoManager's connection
     return res
 end
 
@@ -590,28 +596,41 @@ ptutil.thinGrayLine = function(w) return ptutil.line(w, Blitbuffer.COLOR_GRAY,  
 ptutil.thinBlackLine  = function(w) return ptutil.line(w, Blitbuffer.COLOR_BLACK, Size.line.thin) end
 ptutil.mediumBlackLine  = function(w) return ptutil.line(w, Blitbuffer.COLOR_BLACK, Size.line.medium) end
 
-function ptutil.onFocus(_underline_container)
-    if not Device:isTouchDevice() or BookInfoManager:getSetting("force_focus_indicator") then
+function ptutil.onFocus(_underline_container, render_context)
+    -- Use ~= nil check to properly handle explicit false values from render_context
+    local is_touch = (render_context and render_context.is_touch_device ~= nil) and render_context.is_touch_device or Device:isTouchDevice()
+    local force_indicator = (render_context and render_context.force_focus_indicator ~= nil) and render_context.force_focus_indicator or BookInfoManager:getSetting("force_focus_indicator")
+    if not is_touch or force_indicator then
         _underline_container.color = Blitbuffer.COLOR_BLACK
     end
 end
 
-function ptutil.onUnfocus(_underline_container)
-    if not Device:isTouchDevice() or BookInfoManager:getSetting("force_focus_indicator") then
+function ptutil.onUnfocus(_underline_container, render_context)
+    -- Use ~= nil check to properly handle explicit false values from render_context
+    local is_touch = (render_context and render_context.is_touch_device ~= nil) and render_context.is_touch_device or Device:isTouchDevice()
+    local force_indicator = (render_context and render_context.force_focus_indicator ~= nil) and render_context.force_focus_indicator or BookInfoManager:getSetting("force_focus_indicator")
+    if not is_touch or force_indicator then
         _underline_container.color = Blitbuffer.COLOR_WHITE
     end
 end
 
-function ptutil.showProgressBar(pages)
+function ptutil.showProgressBar(pages, render_context)
     local show_progress_bar = false
     local est_page_count = pages or nil
-    if BookInfoManager:getSetting("force_max_progressbars") and not BookInfoManager:getSetting("show_pages_read_as_progress") then
+
+    -- Use ~= nil check to properly handle explicit false values from render_context
+    local force_max = (render_context and render_context.force_max_progressbars ~= nil) and render_context.force_max_progressbars or BookInfoManager:getSetting("force_max_progressbars")
+    local show_pages_read = (render_context and render_context.show_pages_read_as_progress ~= nil) and render_context.show_pages_read_as_progress or BookInfoManager:getSetting("show_pages_read_as_progress")
+    local hide_file_info = (render_context and render_context.hide_file_info ~= nil) and render_context.hide_file_info or BookInfoManager:getSetting("hide_file_info")
+    local force_no = (render_context and render_context.force_no_progressbars ~= nil) and render_context.force_no_progressbars or BookInfoManager:getSetting("force_no_progressbars")
+
+    if force_max and not show_pages_read then
         est_page_count = ptutil.list_defaults.progress_bar_pages_per_pixel * ptutil.list_defaults.progress_bar_max_size
     end
     show_progress_bar = est_page_count ~= nil and
-        BookInfoManager:getSetting("hide_file_info") and                    -- "show file info"
-        not BookInfoManager:getSetting("show_pages_read_as_progress") and   -- "show pages read"
-        not BookInfoManager:getSetting("force_no_progressbars")             -- "show progress %"
+        hide_file_info and                    -- "show file info"
+        not show_pages_read and               -- "show pages read"
+        not force_no                          -- "show progress %"
     return est_page_count, show_progress_bar
 end
 
@@ -709,5 +728,374 @@ function ptutil.formatTags(keywords, tags_limit)
     end
     return formatted_tags
 end
+
+-- Font size estimation cache
+-- Key format: "text_len|width|height|min|max"
+local font_size_cache = {}
+local FONT_SIZE_CACHE_MAX = 200
+
+-- Clear the font size cache (e.g., on settings change or menu close)
+function ptutil.clearFontSizeCache()
+    font_size_cache = {}
+end
+
+-- Quick-fit detection: determine if text will definitely fit at max size
+-- This allows skipping the sizing loop for simple cases
+-- @param params Table with: text, width, height, max_size
+-- @return boolean True if text will definitely fit at max size
+function ptutil.isTextQuickFit(params)
+    local text = params.text or ""
+    local width = params.width or 100
+    local height = params.height or 100
+    local max_size = params.max_size or 26
+
+    -- Heuristic: estimate characters per line at max font size
+    -- Assume average character width is roughly 0.6 * font_size
+    local avg_char_width = max_size * 0.6
+    local chars_per_line = math.floor(width / avg_char_width)
+
+    -- Estimate line height (roughly 1.2 * font_size)
+    local line_height = max_size * 1.2
+    local max_lines = math.floor(height / line_height)
+
+    -- Total characters that can fit
+    local max_chars = chars_per_line * max_lines
+
+    -- If text length is well under the limit, it's a quick fit
+    -- Use 60% threshold to account for word wrapping inefficiency
+    local text_len = #text
+    return text_len < (max_chars * 0.6)
+end
+
+-- Estimate optimal font size for text in given dimensions
+-- Uses heuristics to avoid trial-and-error widget creation
+-- @param params Table with: text, width, height, min_size, max_size
+-- @return number Estimated font size
+function ptutil.estimateFontSize(params)
+    local text = params.text or ""
+    local width = params.width or 100
+    local height = params.height or 100
+    local min_size = params.min_size or 10
+    local max_size = params.max_size or 26
+
+    -- Check cache first
+    local text_len = #text
+    -- Use math.floor to ensure all values are integers for the cache key
+    local cache_key = string.format("%d|%d|%d|%d|%d", text_len, math.floor(width), math.floor(height), math.floor(min_size), math.floor(max_size))
+    if font_size_cache[cache_key] then
+        return font_size_cache[cache_key]
+    end
+
+    -- Quick fit check - use max size if text is short enough
+    if ptutil.isTextQuickFit(params) then
+        font_size_cache[cache_key] = max_size
+        return max_size
+    end
+
+    -- Heuristic estimation based on text area requirements
+    -- Target: text should fill roughly 60-80% of available area
+
+    -- Count approximate lines based on newlines and text length
+    local newline_count = 0
+    for _ in text:gmatch("\n") do
+        newline_count = newline_count + 1
+    end
+
+    -- Estimate how many lines we'll need
+    -- Assume average character width is 0.6 * font_size
+    -- and we want roughly 80% fill per line
+    local target_fill = 0.8
+    local char_width_ratio = 0.6
+    local line_height_ratio = 1.3  -- Line height relative to font size
+
+    -- Calculate available area
+    local available_area = width * height
+
+    -- Estimate required area for text at font size 1
+    -- Each character needs roughly (0.6 * size) * (1.3 * size) = 0.78 * size^2
+    local area_per_char_at_size_1 = char_width_ratio * line_height_ratio
+
+    -- Total area needed at size 1
+    local text_area_at_size_1 = text_len * area_per_char_at_size_1
+
+    -- Solve for font size: text_area_at_size_1 * size^2 = target_fill * available_area
+    -- size^2 = (target_fill * available_area) / text_area_at_size_1
+    -- size = sqrt((target_fill * available_area) / text_area_at_size_1)
+    local target_area = target_fill * available_area
+    local size_squared = target_area / text_area_at_size_1
+    local estimated_size = math.sqrt(size_squared)
+
+    -- Account for line breaks - text with newlines needs less width
+    -- but more height, so reduce estimate slightly
+    if newline_count > 0 then
+        estimated_size = estimated_size * (1 - newline_count * 0.05)
+    end
+
+    -- Clamp to min/max bounds
+    estimated_size = math.max(min_size, math.min(max_size, math.floor(estimated_size)))
+
+    -- Cache the result (with size limit)
+    local cache_count = 0
+    for _ in pairs(font_size_cache) do cache_count = cache_count + 1 end
+    if cache_count >= FONT_SIZE_CACHE_MAX then
+        -- Simple eviction: clear cache when full
+        font_size_cache = {}
+    end
+    font_size_cache[cache_key] = estimated_size
+
+    return estimated_size
+end
+
+-- Widget Pool for reducing widget allocations
+-- Pools commonly used widgets like HorizontalSpan, VerticalSpan, FrameContainer
+-- to avoid repeated creation and garbage collection overhead
+local WidgetPool = {}
+WidgetPool.__index = WidgetPool
+
+-- Widget type to constructor mapping
+local widget_constructors = nil -- Lazy-initialized
+
+local function get_widget_constructors()
+    if widget_constructors then return widget_constructors end
+    widget_constructors = {
+        HorizontalSpan = require("ui/widget/horizontalspan"),
+        VerticalSpan = require("ui/widget/verticalspan"),
+        FrameContainer = require("ui/widget/container/framecontainer"),
+        CenterContainer = require("ui/widget/container/centercontainer"),
+        LeftContainer = require("ui/widget/container/leftcontainer"),
+    }
+    return widget_constructors
+end
+
+-- Create a new widget pool
+-- @param opts Table with options: max_per_type (default 20)
+function WidgetPool:new(opts)
+    opts = opts or {}
+    local pool = {
+        pools = {},  -- widget_type -> array of available widgets
+        max_per_type = opts.max_per_type or 20,
+    }
+    setmetatable(pool, WidgetPool)
+    return pool
+end
+
+-- Acquire a widget from the pool, creating a new one if none available
+-- @param widget_type String name of widget type (e.g., "HorizontalSpan")
+-- @param init_params Table of initialization parameters
+-- @return Widget instance
+function WidgetPool:acquire(widget_type, init_params)
+    local type_pool = self.pools[widget_type]
+
+    if type_pool and #type_pool > 0 then
+        -- Reuse a pooled widget
+        local widget = table.remove(type_pool)
+        -- Reset widget properties with new init_params
+        if init_params then
+            for k, v in pairs(init_params) do
+                widget[k] = v
+            end
+        end
+        return widget
+    end
+
+    -- Create a new widget
+    local constructors = get_widget_constructors()
+    local constructor = constructors[widget_type]
+    if constructor then
+        return constructor:new(init_params or {})
+    end
+
+    -- Fallback: create a simple table if widget type not found
+    local widget = init_params or {}
+    widget._pool_type = widget_type
+    return widget
+end
+
+-- Release a widget back to the pool for reuse
+-- @param widget Widget instance to release
+function WidgetPool:release(widget)
+    if not widget then return end
+
+    local widget_type = widget._pool_type or widget.name or "unknown"
+
+    -- Initialize pool for this type if needed
+    if not self.pools[widget_type] then
+        self.pools[widget_type] = {}
+    end
+
+    local type_pool = self.pools[widget_type]
+
+    -- Only pool if under the limit
+    if #type_pool < self.max_per_type then
+        -- Clear children to avoid holding references
+        if widget.children then
+            widget.children = {}
+        end
+        if widget[1] then
+            widget[1] = nil
+        end
+        table.insert(type_pool, widget)
+    end
+    -- If over limit, widget will be garbage collected
+end
+
+-- Get the current size of the pool for a widget type
+-- @param widget_type String name of widget type
+-- @return Number of pooled widgets
+function WidgetPool:getPoolSize(widget_type)
+    local type_pool = self.pools[widget_type]
+    if type_pool then
+        return #type_pool
+    end
+    return 0
+end
+
+-- Clear all pooled widgets
+function WidgetPool:clear()
+    self.pools = {}
+end
+
+-- Export WidgetPool
+ptutil.WidgetPool = WidgetPool
+
+-- O(1) LRU Cache Implementation
+-- Uses a doubly-linked list + hash map for O(1) get, put, and eviction
+local LRUCache = {}
+LRUCache.__index = LRUCache
+
+-- Create a new LRU cache
+-- @param max_size Maximum number of entries before eviction
+function LRUCache:new(max_size)
+    local cache = {
+        max_size = max_size or 25,
+        map = {},        -- key -> node
+        head = nil,      -- Most recently used
+        tail = nil,      -- Least recently used
+        current_size = 0,
+    }
+    setmetatable(cache, LRUCache)
+    return cache
+end
+
+-- Internal: Create a new node
+local function create_node(key, value)
+    return {
+        key = key,
+        value = value,
+        prev = nil,
+        next = nil,
+    }
+end
+
+-- Internal: Remove a node from the linked list
+function LRUCache:_remove_node(node)
+    if node.prev then
+        node.prev.next = node.next
+    else
+        self.head = node.next
+    end
+
+    if node.next then
+        node.next.prev = node.prev
+    else
+        self.tail = node.prev
+    end
+
+    node.prev = nil
+    node.next = nil
+end
+
+-- Internal: Add node to head (most recent)
+function LRUCache:_add_to_head(node)
+    node.next = self.head
+    node.prev = nil
+
+    if self.head then
+        self.head.prev = node
+    end
+
+    self.head = node
+
+    if not self.tail then
+        self.tail = node
+    end
+end
+
+-- Internal: Move node to head (mark as most recently used)
+function LRUCache:_move_to_head(node)
+    self:_remove_node(node)
+    self:_add_to_head(node)
+end
+
+-- Get a value from the cache
+-- @param key The key to look up
+-- @return The cached value, or nil if not found
+function LRUCache:get(key)
+    local node = self.map[key]
+    if not node then
+        return nil
+    end
+
+    -- Move to head (most recently used)
+    self:_move_to_head(node)
+
+    return node.value
+end
+
+-- Put a value in the cache
+-- @param key The key to store
+-- @param value The value to store
+function LRUCache:put(key, value)
+    local node = self.map[key]
+
+    if node then
+        -- Update existing entry
+        node.value = value
+        self:_move_to_head(node)
+    else
+        -- Create new entry
+        node = create_node(key, value)
+        self.map[key] = node
+        self:_add_to_head(node)
+        self.current_size = self.current_size + 1
+
+        -- Evict if over capacity
+        if self.current_size > self.max_size then
+            local evicted = self.tail
+            if evicted then
+                self:_remove_node(evicted)
+                self.map[evicted.key] = nil
+                self.current_size = self.current_size - 1
+            end
+        end
+    end
+end
+
+-- Invalidate (remove) a specific key
+-- @param key The key to remove
+function LRUCache:invalidate(key)
+    local node = self.map[key]
+    if node then
+        self:_remove_node(node)
+        self.map[key] = nil
+        self.current_size = self.current_size - 1
+    end
+end
+
+-- Clear all entries
+function LRUCache:clear()
+    self.map = {}
+    self.head = nil
+    self.tail = nil
+    self.current_size = 0
+end
+
+-- Get current cache size
+function LRUCache:size()
+    return self.current_size
+end
+
+-- Export LRUCache
+ptutil.LRUCache = LRUCache
 
 return ptutil

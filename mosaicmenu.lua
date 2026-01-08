@@ -52,6 +52,9 @@ local corner_mark
 local abandoned_mark
 local complete_mark
 local progress_widget
+-- Cache dimensions to avoid rebuilding corner marks unnecessarily
+local cached_corner_mark_size
+local cached_item_width
 
 -- We may find a better algorithm, or just a set of
 -- nice looking combinations of 3 sizes to iterate thru
@@ -184,7 +187,20 @@ function FakeCover:init()
 
         -- We build the VerticalGroup widget with decreasing font sizes till
         -- the widget fits into available height
-        local sizedec = self.initial_sizedec
+        -- Use ptutil.estimateFontSize() to get a good starting point and reduce iterations
+        local combined_text = (authors or "") .. (title or "") .. (series or "")
+        local available_height_for_text = height * 0.8 -- Reserve 20% for padding
+        local estimated_font = ptutil.estimateFontSize({
+            text = combined_text,
+            width = text_width,
+            height = available_height_for_text,
+            min_size = math.min(self.authors_font_min, self.title_font_min),
+            max_size = self.title_font_max,
+        })
+        -- Convert estimated font size to sizedec (how much to subtract from max)
+        -- Start from a sizedec that gives us the estimated font, but not less than initial_sizedec
+        local estimated_sizedec = math.max(0, self.title_font_max - estimated_font)
+        local sizedec = math.max(self.initial_sizedec, math.floor(estimated_sizedec / self.sizedec_step) * self.sizedec_step)
         local loop2 = false -- we may do a second pass with modifier title and authors strings
         local texts_height
         local free_height
@@ -313,7 +329,6 @@ function FakeCover:init()
         filesize = self.filename_add
         local textboxes_ok
         local free_height
-        local sizedec = 1
         self.background = Blitbuffer.COLOR_WHITE
         self.radius = Screen:scaleBySize(10)
         self.bordersize = Size.border.default
@@ -321,6 +336,15 @@ function FakeCover:init()
         width = self.width - 2 * (self.bordersize + self.margin + self.padding)
         height = self.height - 2 * (self.bordersize + self.margin + self.padding)
         local text_width = width - (Size.padding.small * 2)
+        -- Use estimateFontSize() to get a good starting point
+        local estimated_font = ptutil.estimateFontSize({
+            text = title or "",
+            width = text_width,
+            height = height * 0.8,
+            min_size = 10,
+            max_size = 20,
+        })
+        local sizedec = math.max(1, 20 - estimated_font)
         while true do
             if title_wg then
                 title_wg:free(true)
@@ -495,7 +519,12 @@ function MosaicMenuItem:update()
     end
 
     -- test to see what style to draw (pathchooser vs one of our fancy modes)
-    is_pathchooser = ptutil.isPathChooser(self)
+    -- Use cached value from render_context if available, otherwise compute it
+    if self.menu and self.menu.render_context and self.menu.render_context.is_pathchooser ~= nil then
+        is_pathchooser = self.menu.render_context.is_pathchooser
+    else
+        is_pathchooser = ptutil.isPathChooser(self)
+    end
 
     self.is_directory = not (self.entry.is_file or self.entry.file)
     if self.is_directory then
@@ -552,7 +581,15 @@ function MosaicMenuItem:update()
                     forced_baseline = baseline,
                 }
             end
-            local dirtext_font_size = ptutil.grid_defaults.dir_font_nominal
+            -- Use estimateFontSize() to get a better starting point
+            local estimated_font = ptutil.estimateFontSize({
+                text = directory_string,
+                width = dimen.w,
+                height = dimen.h * 0.3, -- Directory text only uses small portion
+                min_size = ptutil.grid_defaults.dir_font_min,
+                max_size = ptutil.grid_defaults.dir_font_nominal,
+            })
+            local dirtext_font_size = math.max(estimated_font, ptutil.grid_defaults.dir_font_min)
             build_directory_text(dirtext_font_size)
             local directory_text_height = directory_text:getSize().h
             local directory_text_baseline = directory_text:getBaseline()
@@ -718,7 +755,14 @@ function MosaicMenuItem:update()
             self.been_opened = true
         end
 
-        local bookinfo = BookInfoManager:getBookInfo(self.filepath, self.do_cover_image)
+        -- Check for pre-fetched bookinfo from batch query first
+        local bookinfo = nil
+        if self.menu._bookinfo_batch and self.menu._bookinfo_batch[self.filepath] then
+            bookinfo = self.menu._bookinfo_batch[self.filepath]
+        else
+            -- Fallback to individual query if not in batch
+            bookinfo = BookInfoManager:getBookInfo(self.filepath, self.do_cover_image)
+        end
         -- Store bookinfo for use in paintTo() to avoid duplicate DB calls
         self.bookinfo = bookinfo
 
@@ -759,7 +803,7 @@ function MosaicMenuItem:update()
             if not pages and book_info and book_info.pages then
                 pages = book_info.pages
             end
-            self.pages, self.show_progress_bar = ptutil.showProgressBar(pages)
+            self.pages, self.show_progress_bar = ptutil.showProgressBar(pages, self.menu.render_context)
             
             local cover_bb_used = false
             self.bookinfo_found = true
@@ -1127,7 +1171,7 @@ function MosaicMenuItem:buildOverlayWidgets()
     -- Status widget (complete/abandoned icons) and progress bar are painted directly,
     -- but we can pre-build the status icons
     if self.show_progress_bar then
-        local status_icon_size = Screen:scaleBySize(17)
+        local status_icon_size = self.menu.scaled_17 or Screen:scaleBySize(17)
         if self.status == "complete" then
             self._status_widget = FrameContainer:new {
                 radius = Size.radius.default,
@@ -1161,11 +1205,12 @@ function MosaicMenuItem:buildOverlayWidgets()
                 }
             }
         elseif not bookinfo._no_provider and (self.percent_finished or 0) == 0 then
+            local unopened_size = self.menu.scaled_8 or Screen:scaleBySize(8)
             self._unopened_widget = ImageWidget:new {
                 file = plugin_dir .. "/resources/new.svg",
                 alpha = true,
-                width = Screen:scaleBySize(8),
-                height = Screen:scaleBySize(8),
+                width = unopened_size,
+                height = unopened_size,
                 scale_factor = 0,
                 original_in_nightmode = false,
             }
@@ -1177,7 +1222,7 @@ function MosaicMenuItem:buildOverlayWidgets()
             local max_progress_size = ptutil.grid_defaults.progress_bar_max_size
             local pages_per_pixel = ptutil.grid_defaults.progress_bar_pages_per_pixel
             if tonumber(est_page_count) > (max_progress_size * pages_per_pixel) then
-                local large_book_icon_size = Screen:scaleBySize(19)
+                local large_book_icon_size = self.menu.scaled_19 or Screen:scaleBySize(19)
                 self._large_book_widget = ImageWidget:new {
                     file = plugin_dir .. "/resources/large_book.svg",
                     width = large_book_icon_size,
@@ -1334,7 +1379,7 @@ function MosaicMenuItem:paintTo(bb, x, y)
             
             -- Paint cached large book widget
             if self._large_book_widget then
-                local large_book_icon_size = Screen:scaleBySize(19)
+                local large_book_icon_size = self.menu.scaled_19 or Screen:scaleBySize(19)
                 self._large_book_widget:paintTo(bb,
                     (pos_x - large_book_icon_size / 2),
                     (pos_y - progress_widget:getSize().h / 3)
@@ -1348,9 +1393,9 @@ function MosaicMenuItem:paintTo(bb, x, y)
             local pos_x = x
             local pos_y = cover_bottom - corner_mark_size +
                 progress_widget_margin - (self._progress_text_widget:getSize().h / 3)
-            
+
             if self.show_progress_bar then
-                pos_y = pos_y - progress_widget:getSize().h - Screen:scaleBySize(2)
+                pos_y = pos_y - progress_widget:getSize().h - (self.menu.scaled_2 or Screen:scaleBySize(2))
             end
 
             self._progress_text_widget:paintTo(bb, pos_x, pos_y)
@@ -1360,13 +1405,23 @@ end
 
 -- As done in MenuItem
 function MosaicMenuItem:onFocus()
-    ptutil.onFocus(self._underline_container)
+    ptutil.onFocus(self._underline_container, self.menu.render_context)
     return true
 end
 
 function MosaicMenuItem:onUnfocus()
-    ptutil.onUnfocus(self._underline_container)
+    ptutil.onUnfocus(self._underline_container, self.menu.render_context)
     return true
+end
+
+-- Clean up widgets when this item is destroyed
+function MosaicMenuItem:onCloseWidget()
+    self:freeOverlayWidgets()
+    -- Free the main widget container
+    if self._underline_container and self._underline_container[1] then
+        self._underline_container[1]:free()
+        self._underline_container[1] = nil
+    end
 end
 
 -- The transient color inversions done in MenuItem:onTapSelect
@@ -1402,7 +1457,12 @@ function MosaicMenu:_recalculateDimen()
     if self.page_num > 0 and self.page > self.page_num then self.page = self.page_num end
 
     -- test to see what style to draw (pathchooser vs one of our fancy modes)
-    is_pathchooser = ptutil.isPathChooser(self)
+    -- Use cached value from render_context if available, otherwise compute it
+    if self.render_context and self.render_context.is_pathchooser ~= nil then
+        is_pathchooser = self.render_context.is_pathchooser
+    else
+        is_pathchooser = ptutil.isPathChooser(self)
+    end
 
     -- Find out available height from other UI elements made in Menu
     self.others_height = 0
@@ -1438,7 +1498,14 @@ function MosaicMenu:_recalculateDimen()
         h = self.item_height
     }
 
-    -- Create or replace corner_mark
+    -- Cache commonly-used scaled sizes to avoid repeated scaleBySize() calls per-item
+    self.scaled_1 = Screen:scaleBySize(1)
+    self.scaled_2 = Screen:scaleBySize(2)
+    self.scaled_8 = Screen:scaleBySize(8)
+    self.scaled_17 = Screen:scaleBySize(17)
+    self.scaled_19 = Screen:scaleBySize(19)
+
+    -- Create or replace corner_mark only when dimensions change
     local mark_image_size = 21
     if self.show_progress_bar then
         mark_image_size = mark_image_size - (Size.border.thin * 2) - Size.padding.small
@@ -1447,79 +1514,86 @@ function MosaicMenu:_recalculateDimen()
     end
     corner_mark_size = Screen:scaleBySize(mark_image_size)
 
-    if corner_mark then
-        complete_mark:free()
-        abandoned_mark:free()
-    end
-    local complete_mark_image = FrameContainer:new {
-        bordersize = 0,
-        padding = Size.padding.small,
-        margin = 0,
-        background = Blitbuffer.COLOR_WHITE,
-        ImageWidget:new {
-            file = plugin_dir .. "/resources/trophy.svg",
-            alpha = true,
-            width = corner_mark_size,
-            height = corner_mark_size,
-            scale_factor = 0,
-            original_in_nightmode = false,
+    -- Only rebuild corner marks when dimensions have changed
+    if corner_mark_size ~= cached_corner_mark_size or self.item_width ~= cached_item_width then
+        if corner_mark then
+            complete_mark:free()
+            abandoned_mark:free()
+        end
+        local complete_mark_image = FrameContainer:new {
+            bordersize = 0,
+            padding = Size.padding.small,
+            margin = 0,
+            background = Blitbuffer.COLOR_WHITE,
+            ImageWidget:new {
+                file = plugin_dir .. "/resources/trophy.svg",
+                alpha = true,
+                width = corner_mark_size,
+                height = corner_mark_size,
+                scale_factor = 0,
+                original_in_nightmode = false,
+            }
         }
-    }
-    local complete_mark_frame = UnderlineContainer:new {
-        linesize = Screen:scaleBySize(1),
-        color = Blitbuffer.COLOR_BLACK,
-        background = Blitbuffer.COLOR_WHITE,
-        bordersize = 0,
-        padding = 0,
-        margin = 0,
-        HorizontalGroup:new {
-            HorizontalSpan:new { width = ((self.item_width * tag_width) - complete_mark_image:getSize().w) },
-            complete_mark_image,
-            LineWidget:new {
-                dimen = Geom:new { w = Screen:scaleBySize(1), h = complete_mark_image:getSize().h, },
-                background = Blitbuffer.COLOR_BLACK,
-            },
+        local complete_mark_frame = UnderlineContainer:new {
+            linesize = Screen:scaleBySize(1),
+            color = Blitbuffer.COLOR_BLACK,
+            background = Blitbuffer.COLOR_WHITE,
+            bordersize = 0,
+            padding = 0,
+            margin = 0,
+            HorizontalGroup:new {
+                HorizontalSpan:new { width = ((self.item_width * tag_width) - complete_mark_image:getSize().w) },
+                complete_mark_image,
+                LineWidget:new {
+                    dimen = Geom:new { w = Screen:scaleBySize(1), h = complete_mark_image:getSize().h, },
+                    background = Blitbuffer.COLOR_BLACK,
+                },
+            }
         }
-    }
-    complete_mark = AlphaContainer:new {
-        alpha = 1.0,
-        complete_mark_frame,
-    }
+        complete_mark = AlphaContainer:new {
+            alpha = 1.0,
+            complete_mark_frame,
+        }
 
-    local abandoned_mark_image = FrameContainer:new {
-        bordersize = 0,
-        padding = Size.padding.small,
-        margin = 0,
-        background = Blitbuffer.COLOR_WHITE,
-        ImageWidget:new {
-            file = plugin_dir .. "/resources/pause.svg",
-            alpha = true,
-            width = corner_mark_size,
-            height = corner_mark_size,
-            scale_factor = 0,
-            original_in_nightmode = false,
+        local abandoned_mark_image = FrameContainer:new {
+            bordersize = 0,
+            padding = Size.padding.small,
+            margin = 0,
+            background = Blitbuffer.COLOR_WHITE,
+            ImageWidget:new {
+                file = plugin_dir .. "/resources/pause.svg",
+                alpha = true,
+                width = corner_mark_size,
+                height = corner_mark_size,
+                scale_factor = 0,
+                original_in_nightmode = false,
+            }
         }
-    }
-    local abandoned_mark_frame = UnderlineContainer:new {
-        linesize = Screen:scaleBySize(1),
-        color = Blitbuffer.COLOR_BLACK,
-        background = Blitbuffer.COLOR_WHITE,
-        bordersize = 0,
-        padding = 0,
-        margin = 0,
-        HorizontalGroup:new {
-            HorizontalSpan:new { width = ((self.item_width * tag_width) - abandoned_mark_image:getSize().w) },
-            abandoned_mark_image,
-            LineWidget:new {
-                dimen = Geom:new { w = Screen:scaleBySize(1), h = abandoned_mark_image:getSize().h, },
-                background = Blitbuffer.COLOR_BLACK,
-            },
+        local abandoned_mark_frame = UnderlineContainer:new {
+            linesize = Screen:scaleBySize(1),
+            color = Blitbuffer.COLOR_BLACK,
+            background = Blitbuffer.COLOR_WHITE,
+            bordersize = 0,
+            padding = 0,
+            margin = 0,
+            HorizontalGroup:new {
+                HorizontalSpan:new { width = ((self.item_width * tag_width) - abandoned_mark_image:getSize().w) },
+                abandoned_mark_image,
+                LineWidget:new {
+                    dimen = Geom:new { w = Screen:scaleBySize(1), h = abandoned_mark_image:getSize().h, },
+                    background = Blitbuffer.COLOR_BLACK,
+                },
+            }
         }
-    }
-    abandoned_mark = AlphaContainer:new {
-        alpha = 1.0,
-        abandoned_mark_frame,
-    }
+        abandoned_mark = AlphaContainer:new {
+            alpha = 1.0,
+            abandoned_mark_frame,
+        }
+
+        -- Update cached dimensions
+        cached_corner_mark_size = corner_mark_size
+        cached_item_width = self.item_width
+    end
 
     -- Create progress_widget
     if not progress_widget then
@@ -1550,6 +1624,22 @@ function MosaicMenu:_updateItemsBuildUI()
     local line_layout = {}
     local select_number
     if self.recent_boundary_index == nil then self.recent_boundary_index = 0 end
+
+    -- Batch pre-fetch bookinfo for all items on this page to reduce DB queries
+    local filepaths = {}
+    for idx = 1, self.perpage do
+        local index = idx_offset + idx
+        local entry = self.item_table[index]
+        if entry and entry.path and not entry.is_go_up then
+            table.insert(filepaths, entry.path)
+        end
+    end
+    local bookinfo_batch = {}
+    if #filepaths > 0 and self._do_cover_images then
+        bookinfo_batch = BookInfoManager:getBookInfoBatch(filepaths, self._do_cover_images) or {}
+    end
+    self._bookinfo_batch = bookinfo_batch  -- Store for items to access
+
     for idx = 1, self.perpage do
         local itm_timer = ptdbg:new()
         local index = idx_offset + idx

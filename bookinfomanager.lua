@@ -114,8 +114,16 @@ local max_cover_dimen = 600 -- tested 400, 600, and 800
 -- LRU Cover Cache for decompressed cover images
 -- Avoids repeated zstd decompression for recently viewed covers
 local COVER_CACHE_SIZE = 25  -- ~35MB worst case at 1.4MB per cover
-local cover_cache = {}       -- filepath -> { bookinfo = {...}, last_access = timestamp }
-local cover_cache_order = {} -- ordered list of filepaths for LRU eviction
+-- Use the O(1) LRU cache from ptutil (lazy-initialized)
+local cover_lru_cache = nil
+
+local function get_cover_cache()
+    if not cover_lru_cache then
+        local ptutil = require("ptutil")
+        cover_lru_cache = ptutil.LRUCache:new(COVER_CACHE_SIZE)
+    end
+    return cover_lru_cache
+end
 
 -- Build our most often used SQL queries according to columns
 local BOOKINFO_INSERT_SQL = "INSERT OR REPLACE INTO bookinfo " ..
@@ -158,75 +166,47 @@ function BookInfoManager:init()
     self.tmpcr3cache = DataStorage:getDataDir() .. "/cache/tmpcr3cache"
 end
 
--- Cover Cache Management
+-- Cover Cache Management using O(1) LRU cache
 -- Returns cached bookinfo with cover if available, nil otherwise
 function BookInfoManager:getCachedCover(filepath)
-    local cached = cover_cache[filepath]
-    if cached then
-        -- Update access time for LRU tracking
-        cached.last_access = os.time()
-        return cached.bookinfo
-    end
-    return nil
+    local cache = get_cover_cache()
+    return cache:get(filepath)
 end
 
--- Returns true if the filepath has a cached cover (does not update access time)
+-- Returns true if the filepath has a cached cover
 function BookInfoManager:isCoverCached(filepath)
-    return cover_cache[filepath] ~= nil
+    local cache = get_cover_cache()
+    -- Use get() which returns nil for missing, but this updates recency
+    -- For a pure check without side effects, we'd need a peek() method
+    -- But for cover caching, updating recency on check is fine
+    return cache:get(filepath) ~= nil
 end
 
--- Adds a bookinfo with cover to the cache, evicting oldest if at capacity
+-- Adds a bookinfo with cover to the cache
+-- The O(1) LRU cache handles eviction automatically
 function BookInfoManager:cacheCover(filepath, bookinfo)
     -- Don't cache if no cover
     if not bookinfo or not bookinfo.cover_bb then
         return
     end
 
-    -- If already in cache, just update access time
-    if cover_cache[filepath] then
-        cover_cache[filepath].last_access = os.time()
-        return
-    end
-
-    -- Evict oldest entry if at capacity
-    -- NOTE: We don't call cover_bb:free() here because the blitbuffer might still
-    -- be referenced by an ImageWidget that hasn't been garbage collected yet.
-    -- The blitbuffer has setAllocated(1) so it will be freed automatically by GC.
-    if #cover_cache_order >= COVER_CACHE_SIZE then
-        local oldest_path = table.remove(cover_cache_order, 1)
-        cover_cache[oldest_path] = nil
-    end
-
-    -- Add to cache
-    cover_cache[filepath] = {
-        bookinfo = bookinfo,
-        last_access = os.time()
-    }
-    table.insert(cover_cache_order, filepath)
+    local cache = get_cover_cache()
+    cache:put(filepath, bookinfo)
 end
 
 -- Clears the entire cover cache (call on settings change, etc.)
 -- NOTE: We don't free blitbuffers here - they might still be in use by widgets.
 -- The GC will clean them up when all references are gone.
 function BookInfoManager:clearCoverCache()
-    cover_cache = {}
-    cover_cache_order = {}
+    local cache = get_cover_cache()
+    cache:clear()
 end
 
 -- Removes a specific entry from the cover cache
 -- NOTE: We don't free the blitbuffer - it might still be in use by a widget.
 function BookInfoManager:invalidateCachedCover(filepath)
-    local cached = cover_cache[filepath]
-    if cached then
-        cover_cache[filepath] = nil
-        -- Remove from order list
-        for i, path in ipairs(cover_cache_order) do
-            if path == filepath then
-                table.remove(cover_cache_order, i)
-                break
-            end
-        end
-    end
+    local cache = get_cover_cache()
+    cache:invalidate(filepath)
 end
 
 -- DB management
@@ -513,6 +493,96 @@ function BookInfoManager:getBookInfo(filepath, get_cover)
     end
 
     return bookinfo
+end
+
+-- Batch query for book info - reduces database round-trips
+-- Uses the same prepared statement approach as getBookInfo() to correctly handle blobs
+-- @param filepaths Array of file paths to query
+-- @param get_cover Boolean whether to include cover blitbuffers
+-- @return Table mapping filepath to bookinfo (missing entries are nil)
+function BookInfoManager:getBookInfoBatch(filepaths, get_cover)
+    local results = {}
+
+    -- Handle empty input
+    if not filepaths or #filepaths == 0 then
+        return results
+    end
+
+    -- Check cover cache first for any cached entries
+    local uncached_paths = {}
+    if get_cover then
+        for _, filepath in ipairs(filepaths) do
+            local cached = self:getCachedCover(filepath)
+            if cached then
+                results[filepath] = cached
+            else
+                table.insert(uncached_paths, filepath)
+            end
+        end
+    else
+        uncached_paths = filepaths
+    end
+
+    -- If all are cached, we're done
+    if #uncached_paths == 0 then
+        return results
+    end
+
+    -- Open DB connection once for all queries
+    self:openDbConnection()
+
+    -- Use the prepared statement for each filepath (same as getBookInfo)
+    -- This correctly handles blob data unlike db_conn:exec()
+    for _, filepath in ipairs(uncached_paths) do
+        local directory, filename = util.splitFilePathName(filepath)
+        local row = self.get_stmt:bind(directory, filename):step()
+
+        if row then
+            local bookinfo = {}
+            for num, col in ipairs(BOOKINFO_COLS_SET) do
+                if col == "pages" then
+                    bookinfo[col] = tonumber(row[num])
+                else
+                    bookinfo[col] = row[num]
+                end
+                -- specific processing for cover columns
+                if col == "cover_w" then
+                    bookinfo["cover_w"] = tonumber(row[num])
+                    bookinfo["cover_h"] = tonumber(row[num + 1])
+                    if not get_cover then
+                        break
+                    end
+                    bookinfo["cover_bb"] = nil
+                    if bookinfo["has_cover"] then
+                        local bbtype = tonumber(row[num + 2])
+                        local bbstride = tonumber(row[num + 3])
+                        local cover_blob = row[num + 4]
+                        if cover_blob then
+                            local cover_data, cover_size = zstd.zstd_uncompress_ctx(cover_blob[1], cover_blob[2])
+                            local expected_cover_size = bbstride * bookinfo["cover_h"]
+                            if cover_size == expected_cover_size then
+                                local cover_bb = Blitbuffer.new(bookinfo["cover_w"], bookinfo["cover_h"], bbtype, cover_data, bbstride, bookinfo["cover_w"])
+                                cover_bb:setAllocated(1)
+                                bookinfo["cover_bb"] = cover_bb
+                            end
+                        end
+                    end
+                    break
+                end
+            end
+
+            results[filepath] = bookinfo
+
+            -- Cache if we fetched a cover
+            if get_cover and bookinfo.cover_bb then
+                self:cacheCover(filepath, bookinfo)
+            end
+        end
+
+        self.get_stmt:clearbind():reset()
+    end
+
+    return results
 end
 
 function BookInfoManager:getDocProps(filepath)
