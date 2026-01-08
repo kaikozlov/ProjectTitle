@@ -541,6 +541,7 @@ function CoverBrowser:addToMainMenu(menu_items)
                         checked_func = function() return BookInfoManager:getSetting("use_stacked_foldercovers") end,
                         callback = function()
                             BookInfoManager:toggleSetting("use_stacked_foldercovers")
+                            ptutil.clearFolderCoverCache()  -- Clear cached folder covers when layout changes
                             fc:updateItems(1, true)
                         end,
                     },

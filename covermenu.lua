@@ -281,6 +281,9 @@ function CoverMenu:onCloseWidget()
 
     -- Clean any short term cache (used by ListMenu to cache some Doc Settings info)
     self.cover_info_cache = nil
+    
+    -- Clear folder cover widget cache
+    ptutil.clearFolderCoverCache()
 
     -- Force garbage collecting when leaving too
     -- (delay it a bit so this pause is less noticable)

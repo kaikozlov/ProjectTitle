@@ -38,6 +38,53 @@ local BookInfoManager = require("bookinfomanager")
 
 local ptutil = {}
 
+-- Folder cover widget cache
+-- Caches generated folder cover widgets by folder path and dimensions
+-- This avoids repeated database queries and widget tree construction
+-- Cache key format: "filepath|max_w|max_h"
+local folder_cover_cache = {}
+local FOLDER_COVER_CACHE_SIZE = 50  -- Max cached folder covers
+
+-- Clear the folder cover cache (called when menu closes or settings change)
+function ptutil.clearFolderCoverCache()
+    for path, widget in pairs(folder_cover_cache) do
+        if widget and widget.free then
+            widget:free()
+        end
+    end
+    folder_cover_cache = {}
+end
+
+-- Get cache key for folder cover
+local function get_folder_cache_key(filepath, max_w, max_h)
+    return filepath .. "|" .. tostring(max_w) .. "|" .. tostring(max_h)
+end
+
+-- Get cached folder cover widget
+local function get_cached_folder_cover(filepath, max_w, max_h)
+    local key = get_folder_cache_key(filepath, max_w, max_h)
+    return folder_cover_cache[key]
+end
+
+-- Cache a folder cover widget
+local function cache_folder_cover(filepath, max_w, max_h, widget)
+    -- Simple size limit - remove oldest entries if over limit
+    local count = 0
+    for _ in pairs(folder_cover_cache) do count = count + 1 end
+    if count >= FOLDER_COVER_CACHE_SIZE then
+        -- Remove first entry (simple approach, not LRU)
+        for key, old_widget in pairs(folder_cover_cache) do
+            if old_widget and old_widget.free then
+                old_widget:free()
+            end
+            folder_cover_cache[key] = nil
+            break
+        end
+    end
+    local key = get_folder_cache_key(filepath, max_w, max_h)
+    folder_cover_cache[key] = widget
+end
+
 ptutil.list_defaults = {
     -- Progress bar settings
     progress_bar_max_size = 235,      -- maximum progress bar width in pixels
@@ -500,6 +547,15 @@ local function build_grid(images, max_w, max_h)
 end
 
 function ptutil.getSubfolderCoverImages(filepath, max_w, max_h)
+    -- Return nil early if filepath is nil
+    if not filepath then return nil end
+    
+    -- Check cache first
+    local cached = get_cached_folder_cover(filepath, max_w, max_h)
+    if cached then
+        return cached
+    end
+    
     local db_res = query_cover_paths(filepath, false)
     local images = build_cover_images(db_res, max_w, max_h)
 
@@ -511,11 +567,17 @@ function ptutil.getSubfolderCoverImages(filepath, max_w, max_h)
     -- Return nil if no images found
     if #images == 0 then return nil end
 
+    local result
     if BookInfoManager:getSetting("use_stacked_foldercovers") then
-        return build_diagonal_stack(images, max_w, max_h)
+        result = build_diagonal_stack(images, max_w, max_h)
     else
-        return build_grid(images, max_w, max_h)
+        result = build_grid(images, max_w, max_h)
     end
+    
+    -- Cache the result
+    cache_folder_cover(filepath, max_w, max_h, result)
+    
+    return result
 end
 
 function ptutil.line(width, color, thickness)
