@@ -104,7 +104,7 @@ function CoverMenu:updateItems(select_number, no_recalculate_dimen)
 
     -- Build render context with all settings needed for this render pass
     -- This avoids repeated getSetting() calls in hot paths
-    self.render_context = self:buildRenderContext()
+    self.render_context = CoverMenu.buildRenderContext(self)
 
     -- As done in Menu:updateItems()
     local old_dimen = self.dimen and self.dimen:copy()
@@ -638,6 +638,10 @@ function CoverMenu:setupLayout()
 end
 
 function CoverMenu:menuInit()
+    -- Initialize render_context early since _recalculateDimen() may be called during init
+    -- (before updateItems() which normally builds it)
+    self.render_context = CoverMenu.buildRenderContext(self)
+    
     CoverMenu._Menu_init_orig(self)
 
     -- pagination controls
