@@ -46,12 +46,10 @@ local folder_cover_cache = {}
 local FOLDER_COVER_CACHE_SIZE = 50  -- Max cached folder covers
 
 -- Clear the folder cover cache (called when menu closes or settings change)
+-- NOTE: We don't call widget:free() here because the widgets might still be
+-- referenced by menu items that haven't been garbage collected yet.
+-- The GC will clean them up when all references are gone.
 function ptutil.clearFolderCoverCache()
-    for path, widget in pairs(folder_cover_cache) do
-        if widget and widget.free then
-            widget:free()
-        end
-    end
     folder_cover_cache = {}
 end
 
@@ -69,14 +67,13 @@ end
 -- Cache a folder cover widget
 local function cache_folder_cover(filepath, max_w, max_h, widget)
     -- Simple size limit - remove oldest entries if over limit
+    -- NOTE: We don't call old_widget:free() because it might still be in use
+    -- by menu items that haven't been garbage collected yet.
     local count = 0
     for _ in pairs(folder_cover_cache) do count = count + 1 end
     if count >= FOLDER_COVER_CACHE_SIZE then
         -- Remove first entry (simple approach, not LRU)
-        for key, old_widget in pairs(folder_cover_cache) do
-            if old_widget and old_widget.free then
-                old_widget:free()
-            end
+        for key, _ in pairs(folder_cover_cache) do
             folder_cover_cache[key] = nil
             break
         end

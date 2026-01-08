@@ -189,13 +189,11 @@ function BookInfoManager:cacheCover(filepath, bookinfo)
     end
 
     -- Evict oldest entry if at capacity
+    -- NOTE: We don't call cover_bb:free() here because the blitbuffer might still
+    -- be referenced by an ImageWidget that hasn't been garbage collected yet.
+    -- The blitbuffer has setAllocated(1) so it will be freed automatically by GC.
     if #cover_cache_order >= COVER_CACHE_SIZE then
         local oldest_path = table.remove(cover_cache_order, 1)
-        local oldest = cover_cache[oldest_path]
-        if oldest and oldest.bookinfo and oldest.bookinfo.cover_bb then
-            -- Free the blitbuffer to release memory
-            oldest.bookinfo.cover_bb:free()
-        end
         cover_cache[oldest_path] = nil
     end
 
@@ -208,23 +206,18 @@ function BookInfoManager:cacheCover(filepath, bookinfo)
 end
 
 -- Clears the entire cover cache (call on settings change, etc.)
+-- NOTE: We don't free blitbuffers here - they might still be in use by widgets.
+-- The GC will clean them up when all references are gone.
 function BookInfoManager:clearCoverCache()
-    for filepath, cached in pairs(cover_cache) do
-        if cached.bookinfo and cached.bookinfo.cover_bb then
-            cached.bookinfo.cover_bb:free()
-        end
-    end
     cover_cache = {}
     cover_cache_order = {}
 end
 
 -- Removes a specific entry from the cover cache
+-- NOTE: We don't free the blitbuffer - it might still be in use by a widget.
 function BookInfoManager:invalidateCachedCover(filepath)
     local cached = cover_cache[filepath]
     if cached then
-        if cached.bookinfo and cached.bookinfo.cover_bb then
-            cached.bookinfo.cover_bb:free()
-        end
         cover_cache[filepath] = nil
         -- Remove from order list
         for i, path in ipairs(cover_cache_order) do
