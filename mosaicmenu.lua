@@ -719,6 +719,8 @@ function MosaicMenuItem:update()
         end
 
         local bookinfo = BookInfoManager:getBookInfo(self.filepath, self.do_cover_image)
+        -- Store bookinfo for use in paintTo() to avoid duplicate DB calls
+        self.bookinfo = bookinfo
 
         if bookinfo and self.do_cover_image and not bookinfo.ignore_cover and not self.file_deleted then
             if bookinfo.cover_fetched then
@@ -1053,6 +1055,188 @@ function MosaicMenuItem:update()
         previous_widget:free()
     end
     self._underline_container[1] = widget
+    
+    -- Build overlay widgets (series badge, progress text, etc.) for use in paintTo()
+    self:buildOverlayWidgets()
+end
+
+-- Free cached overlay widgets to prevent memory leaks
+function MosaicMenuItem:freeOverlayWidgets()
+    if self._series_widget then
+        self._series_widget:free()
+        self._series_widget = nil
+    end
+    if self._status_widget then
+        self._status_widget:free()
+        self._status_widget = nil
+    end
+    if self._unopened_widget then
+        self._unopened_widget:free()
+        self._unopened_widget = nil
+    end
+    if self._large_book_widget then
+        self._large_book_widget:free()
+        self._large_book_widget = nil
+    end
+    if self._progress_text_widget then
+        self._progress_text_widget:free()
+        self._progress_text_widget = nil
+    end
+end
+
+-- Build overlay widgets once in update() instead of repeatedly in paintTo()
+function MosaicMenuItem:buildOverlayWidgets()
+    -- Free any existing overlay widgets first
+    self:freeOverlayWidgets()
+    
+    -- Skip for directories
+    if self.is_directory then return end
+    
+    local bookinfo = self.bookinfo
+    -- Guard against missing render_context (can happen in tests) or pathchooser mode
+    if not bookinfo or is_pathchooser or not self.menu or not self.menu.render_context then return end
+    
+    -- Series widget
+    local series_mode = self.menu.render_context.series_mode
+    local show_series = bookinfo.series and bookinfo.series_index and bookinfo.series_index ~= 0
+    if series_mode == "series_in_separate_line" and show_series then
+        local series_index = " " .. bookinfo.series_index .. " "
+        if string.len(series_index) == 3 then series_index = " " .. series_index .. " " end
+        local series_widget_radius = 0
+        if self.show_progress_bar then
+            series_widget_radius = Size.radius.default
+        end
+        local series_widget_text = TextWidget:new {
+            text = series_index,
+            face = Font:getFace(ptutil.good_serif, 14),
+            alignment = "left",
+            padding = 0,
+        }
+        self._series_widget = FrameContainer:new {
+            linesize = Screen:scaleBySize(1),
+            radius = series_widget_radius,
+            color = Blitbuffer.COLOR_BLACK,
+            bordersize = Size.line.thin,
+            background = Blitbuffer.COLOR_WHITE,
+            padding = 0,
+            margin = 0,
+            series_widget_text,
+        }
+    end
+    
+    -- Status widget (complete/abandoned icons) and progress bar are painted directly,
+    -- but we can pre-build the status icons
+    if self.show_progress_bar then
+        local status_icon_size = Screen:scaleBySize(17)
+        if self.status == "complete" then
+            self._status_widget = FrameContainer:new {
+                radius = Size.radius.default,
+                bordersize = Size.border.thin,
+                padding = Size.padding.small,
+                margin = 0,
+                background = Blitbuffer.COLOR_WHITE,
+                ImageWidget:new {
+                    file = plugin_dir .. "/resources/trophy.svg",
+                    alpha = true,
+                    width = status_icon_size - (Size.border.thin * 2) - Size.padding.small,
+                    height = status_icon_size - (Size.border.thin * 2) - Size.padding.small,
+                    scale_factor = 0,
+                    original_in_nightmode = false,
+                }
+            }
+        elseif self.status == "abandoned" then
+            self._status_widget = FrameContainer:new {
+                radius = Size.radius.default,
+                bordersize = Size.border.thin,
+                padding = Size.padding.small,
+                margin = 0,
+                background = Blitbuffer.COLOR_WHITE,
+                ImageWidget:new {
+                    file = plugin_dir .. "/resources/pause.svg",
+                    alpha = true,
+                    width = status_icon_size - (Size.border.thin * 2) - Size.padding.small,
+                    height = status_icon_size - (Size.border.thin * 2) - Size.padding.small,
+                    scale_factor = 0,
+                    original_in_nightmode = false,
+                }
+            }
+        elseif not bookinfo._no_provider and (self.percent_finished or 0) == 0 then
+            self._unopened_widget = ImageWidget:new {
+                file = plugin_dir .. "/resources/new.svg",
+                alpha = true,
+                width = Screen:scaleBySize(8),
+                height = Screen:scaleBySize(8),
+                scale_factor = 0,
+                original_in_nightmode = false,
+            }
+        end
+        
+        -- Large book indicator
+        local est_page_count = self.pages
+        if est_page_count then
+            local max_progress_size = ptutil.grid_defaults.progress_bar_max_size
+            local pages_per_pixel = ptutil.grid_defaults.progress_bar_pages_per_pixel
+            if tonumber(est_page_count) > (max_progress_size * pages_per_pixel) then
+                local large_book_icon_size = Screen:scaleBySize(19)
+                self._large_book_widget = ImageWidget:new {
+                    file = plugin_dir .. "/resources/large_book.svg",
+                    width = large_book_icon_size,
+                    height = large_book_icon_size,
+                    scale_factor = 0,
+                    alpha = true,
+                    original_in_nightmode = false,
+                }
+            end
+        end
+    end
+    
+    -- Progress text widget
+    local progresstxt = nil
+    if not self.menu.render_context.hide_file_info then
+        progresstxt = (" " .. (self.mandatory or "???") .. " ")
+    elseif self.status ~= "complete" and self.status ~= "abandoned" and self.percent_finished ~= nil then
+        local progress_text_format = self.menu.render_context.progress_text_format
+        local book_info = self.menu.getBookInfo(self.filepath)
+        local pages = book_info.pages or bookinfo.pages or nil
+
+        if progress_text_format == "status_only" then
+            progresstxt = nil
+        elseif progress_text_format == "status_and_pages" then
+            if pages ~= nil then
+                progresstxt = T(" %1/%2 ", Math.round(self.percent_finished * pages), pages)
+            else
+                progresstxt = " " .. math.floor(100 * self.percent_finished) .. "% "
+            end
+        elseif progress_text_format == "status_percent_and_pages" then
+            if pages ~= nil then
+                progresstxt = T(" %1/%2 (%3%) ", Math.round(self.percent_finished * pages), pages, math.floor(100 * self.percent_finished))
+            else
+                progresstxt = " " .. math.floor(100 * self.percent_finished) .. "% "
+            end
+        else
+            progresstxt = " " .. math.floor(100 * self.percent_finished) .. "% "
+        end
+    end
+    if progresstxt then
+        local txtprogress_widget_text = TextWidget:new {
+            text = progresstxt,
+            face = Font:getFace(ptutil.good_sans, 15),
+            alignment = "center",
+            padding = Size.padding.tiny,
+        }
+        local txtprogress_widget_frame = FrameContainer:new {
+            radius = Size.radius.default,
+            bordersize = Size.border.thin,
+            padding = 0,
+            margin = 0,
+            background = Blitbuffer.COLOR_WHITE,
+            txtprogress_widget_text,
+        }
+        self._progress_text_widget = AlphaContainer:new {
+            alpha = 1.0,
+            txtprogress_widget_frame,
+        }
+    end
 end
 
 function MosaicMenuItem:paintTo(bb, x, y)
@@ -1097,47 +1281,21 @@ function MosaicMenuItem:paintTo(bb, x, y)
         end
     end
 
-    local bookinfo = BookInfoManager:getBookInfo(self.filepath, false)
+    -- Use cached bookinfo and overlay widgets from update()
+    local bookinfo = self.bookinfo
     if bookinfo and self.init_done then
-        local series_mode = self.menu.render_context.series_mode
-        -- suppress showing series if index is "0"
-        local show_series = bookinfo.series and bookinfo.series_index and bookinfo.series_index ~= 0
-        if series_mode == "series_in_separate_line" and show_series and is_pathchooser == false then
-            local series_index = " " .. bookinfo.series_index .. " "
-            if string.len(series_index) == 3 then series_index = " " .. series_index .. " " end
-            local series_widget_radius = 0
-            local series_widget_background = Blitbuffer.COLOR_WHITE
-            local xmult = 0.80
-            if self.show_progress_bar then
-                -- xmult = 1.25
-                series_widget_radius = Size.radius.default
-                -- series_widget_background = Blitbuffer.COLOR_GRAY_E
-            end
-            local series_widget_text = TextWidget:new {
-                text = series_index,
-                face = Font:getFace(ptutil.good_serif, 14),
-                alignment = "left",
-                padding = 0,
-            }
-            local series_widget = FrameContainer:new {
-                linesize = Screen:scaleBySize(1),
-                radius = series_widget_radius,
-                color = Blitbuffer.COLOR_BLACK,
-                bordersize = Size.line.thin,
-                background = series_widget_background,
-                padding = 0,
-                margin = 0,
-                series_widget_text,
-            }
-            local pos_x = x + (self.width / 2) + (cover.width / 2) - (series_widget:getSize().w * xmult)
-            local pos_y = cover_top + (series_widget:getSize().h * (1 - xmult))
-            series_widget:paintTo(bb, pos_x, pos_y)
+        -- Paint cached series widget
+        if self._series_widget then
+            local xmult = self.show_progress_bar and 0.80 or 0.80
+            local pos_x = x + (self.width / 2) + (cover.width / 2) - (self._series_widget:getSize().w * xmult)
+            local pos_y = cover_top + (self._series_widget:getSize().h * (1 - xmult))
+            self._series_widget:paintTo(bb, pos_x, pos_y)
         end
 
         if self.show_progress_bar and is_pathchooser == false then
+            -- Calculate progress bar width
             local progress_widget_width_mult = 1.0
             local est_page_count = self.pages or nil
-            local large_book = false
             if est_page_count then
                 local fn_pages = tonumber(est_page_count)
                 local max_progress_size = ptutil.grid_defaults.progress_bar_max_size
@@ -1146,7 +1304,6 @@ function MosaicMenuItem:paintTo(bb, x, y)
                 local total_pixels = math.max(
                 (math.min(math.floor((fn_pages / pages_per_pixel) + 0.5), max_progress_size)), min_progress_size)
                 progress_widget_width_mult = total_pixels / max_progress_size
-                if fn_pages > (max_progress_size * pages_per_pixel) then large_book = true end
             end
             local progress_widget_margin = math.floor((corner_mark_size - progress_widget.height) / 4)
             progress_widget.width = self.width * progress_widget_width_mult
@@ -1156,141 +1313,47 @@ function MosaicMenuItem:paintTo(bb, x, y)
             local pos_x = x
             local pos_y = cover_bottom - corner_mark_size + progress_widget_margin
             progress_widget:paintTo(bb, pos_x, pos_y)
-            local status_widget = nil
-            local status_icon_size = Screen:scaleBySize(17)
-            if self.status == "complete" then
-                status_widget = FrameContainer:new {
-                    radius = Size.radius.default,
-                    bordersize = Size.border.thin,
-                    padding = Size.padding.small,
-                    margin = 0,
-                    background = Blitbuffer.COLOR_WHITE,
-                    ImageWidget:new {
-                        file = plugin_dir .. "/resources/trophy.svg",
-                        alpha = true,
-                        width = status_icon_size - (Size.border.thin * 2) - Size.padding.small,
-                        height = status_icon_size - (Size.border.thin * 2) - Size.padding.small,
-                        scale_factor = 0,
-                        original_in_nightmode = false,
-                    }
-                }
-            elseif self.status == "abandoned" then
-                status_widget = FrameContainer:new {
-                    radius = Size.radius.default,
-                    bordersize = Size.border.thin,
-                    padding = Size.padding.small,
-                    margin = 0,
-                    background = Blitbuffer.COLOR_WHITE,
-                    ImageWidget:new {
-                        file = plugin_dir .. "/resources/pause.svg",
-                        alpha = true,
-                        width = status_icon_size - (Size.border.thin * 2) - Size.padding.small,
-                        height = status_icon_size - (Size.border.thin * 2) - Size.padding.small,
-                        scale_factor = 0,
-                        original_in_nightmode = false,
-                    }
-                }
-            elseif not bookinfo._no_provider and percent_done == 0 then
-                local unopened_widget = ImageWidget:new {
-                    file = plugin_dir .. "/resources/new.svg",
-                    alpha = true,
-                    width = Screen:scaleBySize(8),
-                    height = Screen:scaleBySize(8),
-                    scale_factor = 0,
-                    original_in_nightmode = false,
-                }
-                unopened_widget:paintTo(bb,
-                    (pos_x + (progress_widget:getSize().w - (unopened_widget:getSize().w * 0.625))),
-                    (pos_y - ((progress_widget:getSize().h / 2) - (unopened_widget:getSize().w * 0.50)))
-                )
-            end
-            if status_widget ~= nil then
+            
+            -- Paint cached status widget (complete/abandoned icons)
+            if self._status_widget then
                 local inset_mult = 1.25
-                if (progress_widget:getSize().w / status_widget:getSize().w) < 2 then inset_mult = 0.1 end
-                status_widget:paintTo(bb,
-                    (pos_x + progress_widget:getSize().w - (status_widget:getSize().w * inset_mult)),
+                if (progress_widget:getSize().w / self._status_widget:getSize().w) < 2 then inset_mult = 0.1 end
+                self._status_widget:paintTo(bb,
+                    (pos_x + progress_widget:getSize().w - (self._status_widget:getSize().w * inset_mult)),
                     (pos_y - progress_widget:getSize().h / 2)
                 )
             end
-            if large_book then
+            
+            -- Paint cached unopened widget
+            if self._unopened_widget then
+                self._unopened_widget:paintTo(bb,
+                    (pos_x + (progress_widget:getSize().w - (self._unopened_widget:getSize().w * 0.625))),
+                    (pos_y - ((progress_widget:getSize().h / 2) - (self._unopened_widget:getSize().w * 0.50)))
+                )
+            end
+            
+            -- Paint cached large book widget
+            if self._large_book_widget then
                 local large_book_icon_size = Screen:scaleBySize(19)
-                local max_widget = ImageWidget:new({
-                    file = plugin_dir .. "/resources/large_book.svg",
-                    width = large_book_icon_size,
-                    height = large_book_icon_size,
-                    scale_factor = 0,
-                    alpha = true,
-                    original_in_nightmode = false,
-                })
-                max_widget:paintTo(bb,
+                self._large_book_widget:paintTo(bb,
                     (pos_x - large_book_icon_size / 2),
                     (pos_y - progress_widget:getSize().h / 3)
                 )
             end
         end
 
-        if is_pathchooser == false then
-            local progresstxt = nil
-            if not self.menu.render_context.hide_file_info then
-                progresstxt = (" " .. self.mandatory .. " ") or " ??? "
-            elseif self.status ~= "complete" and self.status ~= "abandoned" and self.percent_finished ~= nil then
-                -- Use new progress_text_format setting
-                local progress_text_format = self.menu.render_context.progress_text_format
-                local book_info = self.menu.getBookInfo(self.filepath)
-                local pages = book_info.pages or bookinfo.pages or nil
-
-                if progress_text_format == "status_only" then
-                    -- No text, just the progress bar
-                    progresstxt = nil
-                elseif progress_text_format == "status_and_pages" then
-                    -- Show pages only (no percent)
-                    if pages ~= nil then
-                        progresstxt = T(" %1/%2 ", Math.round(self.percent_finished * pages), pages)
-                    else
-                        progresstxt = " " .. math.floor(100 * self.percent_finished) .. "% "
-                    end
-                elseif progress_text_format == "status_percent_and_pages" then
-                    -- Show pages with percent
-                    if pages ~= nil then
-                        progresstxt = T(" %1/%2 (%3%) ", Math.round(self.percent_finished * pages), pages, math.floor(100 * self.percent_finished))
-                    else
-                        progresstxt = " " .. math.floor(100 * self.percent_finished) .. "% "
-                    end
-                else
-                    -- Default: status_and_percent - Show percentage only
-                    progresstxt = " " .. math.floor(100 * self.percent_finished) .. "% "
-                end
+        -- Paint cached progress text widget
+        if self._progress_text_widget and is_pathchooser == false then
+            local progress_widget_margin = math.floor((corner_mark_size - self._progress_text_widget:getSize().h) / 2)
+            local pos_x = x
+            local pos_y = cover_bottom - corner_mark_size +
+                progress_widget_margin - (self._progress_text_widget:getSize().h / 3)
+            
+            if self.show_progress_bar then
+                pos_y = pos_y - progress_widget:getSize().h - Screen:scaleBySize(2)
             end
-            if progresstxt ~= nil then
-                local txtprogress_widget_text = TextWidget:new {
-                    text = progresstxt,
-                    face = Font:getFace(ptutil.good_sans, 15),
-                    alignment = "center",
-                    padding = Size.padding.tiny,
-                }
-                local txtprogress_widget_frame = FrameContainer:new {
-                    radius = Size.radius.default,
-                    bordersize = Size.border.thin,
-                    padding = 0,
-                    margin = 0,
-                    background = Blitbuffer.COLOR_WHITE,
-                    txtprogress_widget_text,
-                }
-                local txtprogress_widget = AlphaContainer:new {
-                    alpha = 1.0,
-                    txtprogress_widget_frame,
-                }
-                local progress_widget_margin = math.floor((corner_mark_size - txtprogress_widget:getSize().h) / 2)
-                local pos_x = x
-                local pos_y = cover_bottom - corner_mark_size +
-                    progress_widget_margin - (txtprogress_widget:getSize().h / 3)
-                
-                if self.show_progress_bar then
-                    pos_y = pos_y - progress_widget:getSize().h - Screen:scaleBySize(2)
-                end
 
-                txtprogress_widget:paintTo(bb, pos_x, pos_y)
-            end
+            self._progress_text_widget:paintTo(bb, pos_x, pos_y)
         end
     end
 end

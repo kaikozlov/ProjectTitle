@@ -87,7 +87,18 @@ describe("MosaicMenu Progress Indicators", function()
         -- Initialize menu (creates progress_widget)
         menu:_recalculateDimen()
         
-        -- Build items
+        -- Spy on widget creation BEFORE building items
+        -- Since overlay widgets are now created in update() during _updateItemsBuildUI(),
+        -- we need to spy before calling _updateItemsBuildUI()
+        local ProgressWidget = require("ui/widget/progresswidget")
+        local AlphaContainer = require("ui/widget/container/alphacontainer")
+        local TextWidget = require("ui/widget/textwidget")
+        
+        spy.on(ProgressWidget, "paintTo")
+        spy.on(AlphaContainer, "paintTo")
+        spy.on(TextWidget, "new")
+        
+        -- Build items (this now creates overlay widgets in MosaicMenuItem:update())
         menu:_updateItemsBuildUI()
         
         -- Find the MosaicMenuItem in the widget tree
@@ -117,35 +128,19 @@ describe("MosaicMenu Progress Indicators", function()
         end
         assert.is_not_nil(item, "Could not find MosaicMenuItem in widget tree")
         
-        -- Spy on paintTo methods
-        -- We need to access the progress_widget instance. It's a local in mosaicmenu.lua, 
-        -- but it's created in _recalculateDimen.
-        -- Since we can't easily access the local variable, we can spy on the ProgressWidget class paintTo method
-        -- IF the instance uses it.
-        local ProgressWidget = require("ui/widget/progresswidget")
-        local AlphaContainer = require("ui/widget/container/alphacontainer")
-        local TextWidget = require("ui/widget/textwidget")
-        
-        spy.on(ProgressWidget, "paintTo")
-        spy.on(AlphaContainer, "paintTo")
-        spy.on(TextWidget, "new")
-        
         -- Call paintTo on the item
         local bb = {} -- mock blitbuffer
         item:paintTo(bb, 0, 0)
         
-        -- Assertions
+        -- Assertions - progress bar should be painted
         assert.spy(ProgressWidget.paintTo).was.called()
+        
+        -- Verify AlphaContainer (progress text widget) was painted
         assert.spy(AlphaContainer.paintTo).was.called()
         
-        -- Verify text content
+        -- Verify text content was created with correct progress text
         -- Expected: 100/200 (50%) 
-        -- Note: T template might add spaces or not depending on implementation, but here T is mocked to return formatted string.
-        -- In mock_ui.lua, T is not mocked, but in mosaicmenu.lua it is required from ffi/util.
-        -- Wait, T is required in mosaicmenu.lua: local T = require("ffi/util").template
-        -- I need to check if ffi/util is mocked. It is not in mock_ui.lua.
-        -- But I can check the arguments passed to TextWidget:new
-        
+        -- TextWidget.new is called during _updateItemsBuildUI() now (in MosaicMenuItem:buildOverlayWidgets())
         assert.spy(TextWidget.new).was.called()
         -- We need to find the call that created the progress text
         -- TextWidget.new is a spy, so it has .calls property
