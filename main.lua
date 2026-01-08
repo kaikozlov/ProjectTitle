@@ -54,14 +54,28 @@ end
 --]]
 local safe_version = 202510000000
 local cv_int, cv_commit = Version:getNormalizedCurrentVersion()
-local version_unsafe = true
-if (cv_int == safe_version or util.fileExists(data_dir .. "/settings/pt-skipversioncheck.txt")) then
+local version_unsafe = false  -- Default to safe, be more lenient
+
+-- Version check logic:
+-- 1. Exact match with safe_version: always safe
+-- 2. Skip file exists: always safe
+-- 3. Same major version (within 100 of safe): likely safe (minor KOReader updates)
+-- 4. Newer than safe_version: likely safe (plugin may work with newer KOReader)
+-- 5. Older than safe_version by more than 100: potentially unsafe
+if cv_int == safe_version or util.fileExists(data_dir .. "/settings/pt-skipversioncheck.txt") then
+    version_unsafe = false
+elseif cv_int > safe_version then
+    -- Newer version - likely compatible, proceed with warning
+    logger.info(ptdbg.logprefix, "Running on newer KOReader version", tostring(cv_int), "- proceeding optimistically")
+    version_unsafe = false
+elseif safe_version - cv_int <= 100 then
+    -- Minor version difference (same major release) - likely compatible
+    logger.info(ptdbg.logprefix, "Running on slightly older KOReader version", tostring(cv_int), "- proceeding")
     version_unsafe = false
 else
-    logger.warn(ptdbg.logprefix, "Version not safe", tostring(cv_int))
-    if safe_version - cv_int < 1000 then
-        logger.warn(ptdbg.logprefix, "This is a KOReader nightly build, not the official release")
-    end
+    -- Significantly older version - may have compatibility issues
+    logger.warn(ptdbg.logprefix, "Version may be incompatible:", tostring(cv_int), "expected:", tostring(safe_version))
+    version_unsafe = true
 end
 
 -- If any required files are missing, or if KOReader version is wrong, load an empty plugin

@@ -231,7 +231,7 @@ function FakeCover:init()
                 authors_wg = TextBoxWidget:new {
                     text = authors,
                     lang = self.book_lang,
-                    face = Font:getFace(ptutil.good_serif, math.max(self.authors_font_max - sizedec, self.authors_font_min)),
+                    face = ptutil.getFontFace(ptutil.good_serif, math.max(self.authors_font_max - sizedec, self.authors_font_min)),
                     width = text_width,
                     alignment = "center",
                     bgcolor = self.background,
@@ -242,7 +242,7 @@ function FakeCover:init()
                 series_wg = TextBoxWidget:new {
                     text = series,
                     lang = self.book_lang,
-                    face = Font:getFace(ptutil.good_serif, math.max(self.series_font_max - sizedec, self.series_font_min)),
+                    face = ptutil.getFontFace(ptutil.good_serif, math.max(self.series_font_max - sizedec, self.series_font_min)),
                     width = text_width,
                     alignment = "center",
                     bgcolor = self.background,
@@ -253,7 +253,7 @@ function FakeCover:init()
                 title_wg = TextBoxWidget:new {
                     text = title,
                     lang = self.book_lang,
-                    face = Font:getFace(titlefont, math.max(self.title_font_max - sizedec, self.title_font_min)),
+                    face = ptutil.getFontFace(titlefont, math.max(self.title_font_max - sizedec, self.title_font_min)),
                     bold = bold_title,
                     width = text_width,
                     alignment = "center",
@@ -573,7 +573,7 @@ function MosaicMenuItem:update()
             local function build_directory_text(font_size, height, baseline)
                 directory_text = TextWidget:new {
                     text = " " .. directory_string .. " ",
-                    face = Font:getFace(ptutil.good_serif, font_size),
+                    face = ptutil.getFontFace(ptutil.good_serif, font_size),
                     max_width = dimen.w,
                     alignment = "center",
                     padding = 0,
@@ -850,7 +850,7 @@ function MosaicMenuItem:update()
                     local title_font_size = 16
                     if title_text then
                         -- Limit title to 2 lines max by using height constraint
-                        local title_face = Font:getFace(ptutil.good_serif, title_font_size)
+                        local title_face = ptutil.getFontFace(ptutil.good_serif, title_font_size)
                         local line_height = (title_face.size or title_font_size) * 1.3  -- approximate line height
                         local max_title_lines = authors_text and 2 or 3  -- fewer lines if we have author
                         local max_title_height = math.floor(line_height * max_title_lines)
@@ -868,7 +868,7 @@ function MosaicMenuItem:update()
                     if authors_text then
                         table.insert(info_vgroup, TextWidget:new {
                             text = BD.auto(authors_text),
-                            face = Font:getFace(ptutil.good_serif, 12),
+                            face = ptutil.getFontFace(ptutil.good_serif, 12),
                             max_width = info_width,
                             alignment = "center",
                         })
@@ -887,7 +887,7 @@ function MosaicMenuItem:update()
                     if info_block_height + info_gap > max_reserved and authors_text then
                         info_vgroup = VerticalGroup:new {}
                         if title_text then
-                            local title_face = Font:getFace(ptutil.good_serif, title_font_size)
+                            local title_face = ptutil.getFontFace(ptutil.good_serif, title_font_size)
                             local line_height = (title_face.size or title_font_size) * 1.3
                             local max_title_height = math.floor(line_height * 2)
                             table.insert(info_vgroup, TextBoxWidget:new {
@@ -1152,7 +1152,7 @@ function MosaicMenuItem:buildOverlayWidgets()
         end
         local series_widget_text = TextWidget:new {
             text = series_index,
-            face = Font:getFace(ptutil.good_serif, 14),
+            face = ptutil.getFontFace(ptutil.good_serif, 14),
             alignment = "left",
             padding = 0,
         }
@@ -1265,7 +1265,7 @@ function MosaicMenuItem:buildOverlayWidgets()
     if progresstxt then
         local txtprogress_widget_text = TextWidget:new {
             text = progresstxt,
-            face = Font:getFace(ptutil.good_sans, 15),
+            face = ptutil.getFontFace(ptutil.good_sans, 15),
             alignment = "center",
             padding = Size.padding.tiny,
         }

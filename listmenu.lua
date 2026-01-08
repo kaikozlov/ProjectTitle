@@ -137,7 +137,7 @@ function ListMenuItem:update()
     local fontsize_dec_step = ptutil.list_defaults.fontsize_dec_step
     -- calculate font used in all right widget text
     local wright_font_size = _fontSize(ptutil.list_defaults.wright_font_nominal, ptutil.list_defaults.wright_font_max)
-    local wright_font_face = Font:getFace(ptutil.good_sans, wright_font_size)
+    local wright_font_face = ptutil.getFontFace(ptutil.good_sans, wright_font_size)
     -- and font sizes used for title and author/series
     local title_font_size = _fontSize(ptutil.list_defaults.title_font_nominal, ptutil.list_defaults.title_font_max)
     local directory_font_size = _fontSize(ptutil.list_defaults.directory_font_nominal, ptutil.list_defaults.directory_font_max)
@@ -182,7 +182,7 @@ function ListMenuItem:update()
             local mandatory_str = self.mandatory or ""
             local folder_count = string.match(mandatory_str, "(%d+) \u{F114}")
             local file_count = string.match(mandatory_str, "(%d+) \u{F016}")
-            wright_font_face = Font:getFace(ptutil.good_sans, _fontSize(15, 19))
+            wright_font_face = ptutil.getFontFace(ptutil.good_sans, _fontSize(15, 19))
 
             -- add file or folder counts as necessary with pluralization
             if folder_count and tonumber(folder_count) > 0 then
@@ -277,7 +277,7 @@ function ListMenuItem:update()
 
         local wleft = TextBoxWidget:new {
             text = wlefttext,
-            face = Font:getFace(folderfont, directory_font_size),
+            face = ptutil.getFontFace(folderfont, directory_font_size),
             width = wleft_width,
             alignment = "left",
             bold = false,
@@ -850,7 +850,7 @@ function ListMenuItem:update()
                 wtitle = TextWidget:new {
                     text = title,
                     lang = bookinfo.language,
-                    face = Font:getFace(fontname_title, fontsize_title),
+                    face = ptutil.getFontFace(fontname_title, fontsize_title),
                     max_width = wmain_width - wright_right_padding,
                     padding = 0,
                     truncate_with_ellipsis = true,
@@ -870,7 +870,7 @@ function ListMenuItem:update()
                 wtitle = TextBoxWidget:new {
                     text = title,
                     lang = bookinfo.language,
-                    face = Font:getFace(fontname_title, fontsize_title),
+                    face = ptutil.getFontFace(fontname_title, fontsize_title),
                     width = wmain_width - wright_right_padding,
                     height_adjust = true,
                     height_overflow_show_ellipsis = true,
@@ -890,7 +890,7 @@ function ListMenuItem:update()
                 wauthors = TextBoxWidget:new {
                     text = author_series,
                     lang = bookinfo.language,
-                    face = Font:getFace(fontname_authors, fontsize_authors),
+                    face = ptutil.getFontFace(fontname_authors, fontsize_authors),
                     width = wmetadata_safe_width,
                     height_adjust = true,
                     alignment = "left",
@@ -902,7 +902,7 @@ function ListMenuItem:update()
                     wtags_avail_height = dimen.h - title_reserved_space - wauthors:getSize().h
                     wtags = TextBoxWidget:new {
                         text = tags,
-                        face = Font:getFace(fontname_tags, fontsize_tags),
+                        face = ptutil.getFontFace(fontname_tags, fontsize_tags),
                         width = wmetadata_safe_width,
                         height = wtags_avail_height,
                         height_adjust = true,
@@ -1148,7 +1148,7 @@ function ListMenuItem:update()
             local filefont = ptutil.good_sans
             local wleft = TextBoxWidget:new {
                 text = wlefttext,
-                face = Font:getFace(filefont, title_font_size),
+                face = ptutil.getFontFace(filefont, title_font_size),
                 width = wleft_width,
                 alignment = "left",
                 bold = false,
@@ -1234,7 +1234,7 @@ function ListMenuItem:update()
                 end
                 text_widget = TextBoxWidget:new {
                     text = text .. hint,
-                    face = Font:getFace(ptutil.good_sans, fontsize_no_bookinfo),
+                    face = ptutil.getFontFace(ptutil.good_sans, fontsize_no_bookinfo),
                     width = dimen.w - 2 * Screen:scaleBySize(10) - wright_width - wright_right_padding,
                     alignment = "left",
                     fgcolor = fgcolor,

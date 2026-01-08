@@ -701,7 +701,7 @@ function CoverMenu:menuInit()
     if not BookInfoManager:getSetting("reverse_footer") then
         self.cur_folder_text = TextWidget:new {
             text = text,
-            face = Font:getFace(footer_font_face, footer_font_size),
+            face = ptutil.getFontFace(footer_font_face, footer_font_size),
             max_width = (self.screen_w * 0.94) - self.page_info:getSize().w, -- pagination_width,
             truncate_with_ellipsis = true,
             truncate_left = true,
@@ -713,7 +713,7 @@ function CoverMenu:menuInit()
     else
         self.cur_folder_text = TextWidget:new {
             text = text,
-            face = Font:getFace(footer_font_face, footer_font_size),
+            face = ptutil.getFontFace(footer_font_face, footer_font_size),
             max_width = (self.screen_w * 0.94) - self.page_info:getSize().w, -- pagination_width,
             truncate_with_ellipsis = true,
         }

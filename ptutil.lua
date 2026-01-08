@@ -166,6 +166,94 @@ ptutil.good_sans_bold = "source/SourceSans3-Bold.ttf"
 ptutil.good_sans_boldit = "source/SourceSans3-BoldIt.ttf"
 ptutil.title_serif = ptutil.good_serif_boldit
 
+-- Font fallback mappings: custom font -> system font fallback
+-- Used when custom fonts fail to load (e.g., on Desktop/AppImage/Docker)
+ptutil.font_fallbacks = {
+    [ptutil.good_serif] = "cfont",
+    [ptutil.good_serif_it] = "cfont",
+    [ptutil.good_serif_bold] = "cfont",
+    [ptutil.good_serif_boldit] = "cfont",
+    [ptutil.good_sans] = "infofont",
+    [ptutil.good_sans_it] = "infofont",
+    [ptutil.good_sans_bold] = "infofont",
+    [ptutil.good_sans_boldit] = "infofont",
+}
+
+-- Track whether custom fonts are available (checked once on first use)
+local fonts_available = nil
+local Font = nil  -- Lazy-loaded to avoid circular dependency
+
+-- Check if custom fonts can be loaded (done once, cached)
+local function check_fonts_available()
+    if fonts_available ~= nil then
+        return fonts_available
+    end
+
+    -- Lazy-load Font module
+    if not Font then
+        Font = require("ui/font")
+    end
+
+    -- Try to load one of our custom fonts
+    local test_face = Font:getFace(ptutil.good_sans, 16)
+    if test_face then
+        fonts_available = true
+        logger.info(ptdbg.logprefix, "Custom fonts are available")
+    else
+        fonts_available = false
+        logger.warn(ptdbg.logprefix, "Custom fonts not available, using system font fallbacks")
+    end
+
+    return fonts_available
+end
+
+-- Safe font getter that falls back to system fonts when custom fonts fail
+-- This prevents crashes on Desktop Linux, macOS, AppImage, Docker, etc.
+-- @param font_name The font name/path to load
+-- @param size The font size
+-- @return A valid font face (never nil)
+function ptutil.getFontFace(font_name, size)
+    -- Lazy-load Font module
+    if not Font then
+        Font = require("ui/font")
+    end
+
+    -- If custom fonts are available, use them directly
+    if check_fonts_available() then
+        local face = Font:getFace(font_name, size)
+        if face then
+            return face
+        end
+    end
+
+    -- Custom fonts not available or failed, try fallback
+    local fallback = ptutil.font_fallbacks[font_name]
+    if fallback then
+        local face = Font:getFace(fallback, size)
+        if face then
+            return face
+        end
+    end
+
+    -- Last resort: try common system fonts
+    local system_fonts = {"cfont", "infofont", "infont", "tfont"}
+    for _, sys_font in ipairs(system_fonts) do
+        local face = Font:getFace(sys_font, size)
+        if face then
+            return face
+        end
+    end
+
+    -- This should never happen, but log it if it does
+    logger.err(ptdbg.logprefix, "CRITICAL: No fonts available at all for:", font_name)
+    return nil
+end
+
+-- Reset the font availability check (useful after installing fonts)
+function ptutil.resetFontCheck()
+    fonts_available = nil
+end
+
 -- a non-standard space is used here because it looks nicer
 ptutil.separator = {
     bar     = " | ",
