@@ -342,11 +342,20 @@ local function setup_mocks()
         getFolderCover = function() return nil end,
         getSubfolderCoverImages = function() return nil end,
         formatAuthors = function(a) return a end,
-        showProgressBar = function() return 100, true end,
-        onFocus = function() end,
-        onUnfocus = function() end,
+        showProgressBar = function(pages, render_context) return pages or 100, true end,
+        onFocus = function(container, render_context) end,
+        onUnfocus = function(container, render_context) end,
         mediumBlackLine = function() return {} end,
-        thinGrayLine = function() return {} end
+        thinGrayLine = function() return {} end,
+        thinWhiteLine = function() return {} end,
+        -- Font sizing functions (Phase 3)
+        estimateFontSize = function(params)
+            return params.max_size or 26
+        end,
+        isTextQuickFit = function(params)
+            return (#(params.text or "")) < 20
+        end,
+        clearFontSizeCache = function() end,
     }
     
     -- Mock G_reader_settings
@@ -379,6 +388,10 @@ local function default_render_context()
         use_stacked_foldercovers = nil,
         -- UI settings
         force_focus_indicator = nil,
+        -- Progress bar settings (added in Phase 2)
+        force_max_progressbars = nil,
+        force_no_progressbars = nil,
+        show_pages_read_as_progress = nil,
         -- Computed values
         is_pathchooser = false,
         is_touch_device = true,

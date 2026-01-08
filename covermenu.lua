@@ -92,6 +92,10 @@ function CoverMenu:buildRenderContext()
         use_stacked_foldercovers = BookInfoManager:getSetting("use_stacked_foldercovers"),
         -- UI settings
         force_focus_indicator = BookInfoManager:getSetting("force_focus_indicator"),
+        -- Progress bar settings (used by ptutil.showProgressBar)
+        force_max_progressbars = BookInfoManager:getSetting("force_max_progressbars"),
+        force_no_progressbars = BookInfoManager:getSetting("force_no_progressbars"),
+        show_pages_read_as_progress = BookInfoManager:getSetting("show_pages_read_as_progress"),
         -- Computed values
         is_pathchooser = ptutil.isPathChooser(self),
         is_touch_device = Device:isTouchDevice(),
@@ -566,7 +570,10 @@ function CoverMenu:menuInit()
     -- Initialize render_context early since _recalculateDimen() may be called during init
     -- (before updateItems() which normally builds it)
     self.render_context = CoverMenu.buildRenderContext(self)
-    
+
+    -- Initialize widget pool for reusing common widgets
+    self.widget_pool = ptutil.WidgetPool:new({ max_per_type = 30 })
+
     CoverMenu._Menu_init_orig(self)
 
     -- pagination controls

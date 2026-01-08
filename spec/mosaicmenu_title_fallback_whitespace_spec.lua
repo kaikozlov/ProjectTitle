@@ -54,7 +54,10 @@ describe("MosaicMenu Title Fallback Whitespace", function()
             good_serif = "font",
             mediumBlackLine = function() return {} end,
             thinGrayLine = function() return {} end,
-            thinWhiteLine = function() return {} end
+            thinWhiteLine = function() return {} end,
+            estimateFontSize = function(params) return params.max_size or 20 end,
+            isTextQuickFit = function() return true end,
+            clearFontSizeCache = function() end
         }
         package.loaded["ptutil"] = ptutilMock
         
