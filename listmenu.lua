@@ -405,7 +405,8 @@ function ListMenuItem:update()
             end
 
             -- In case we got a blitbuffer and didnt use it (ignore_cover), free it
-            if bookinfo.cover_bb and not cover_bb_used then
+            -- But don't free if it's cached (will be freed when evicted from cache)
+            if bookinfo.cover_bb and not cover_bb_used and not BookInfoManager:isCoverCached(self.filepath) then
                 bookinfo.cover_bb:free()
             end
 

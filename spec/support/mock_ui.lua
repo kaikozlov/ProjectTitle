@@ -285,7 +285,13 @@ local function setup_mocks()
         end,
         getCachedCoverSize = function()
             return 100, 100, 1
-        end
+        end,
+        -- Cover cache methods
+        getCachedCover = function() return nil end,
+        isCoverCached = function() return false end,
+        cacheCover = function() end,
+        clearCoverCache = function() end,
+        invalidateCachedCover = function() end
     }
     
     -- Mock ptutil
