@@ -333,7 +333,7 @@ function ListMenuItem:update()
             local wleft_width = 0 -- if not do_cover_image
             local wleft_height
             if self.do_cover_image then
-                if bookinfo.has_cover and not bookinfo.ignore_cover then
+                if bookinfo.has_cover and not bookinfo.ignore_cover and bookinfo.cover_bb then
                     wleft_height = dimen.h
                     wleft_width = wleft_height -- make it squared
                     cover_bb_used = true
@@ -343,6 +343,7 @@ function ListMenuItem:update()
                         max_img_w - border_total, max_img_h - border_total)
                     local wimage = ImageWidget:new {
                         image = bookinfo.cover_bb,
+                        image_disposable = false, -- Don't free cached cover_bb
                         scale_factor = scale_factor,
                     }
                     wleft = CenterContainer:new {
@@ -404,11 +405,10 @@ function ListMenuItem:update()
                 end
             end
 
-            -- In case we got a blitbuffer and didnt use it (ignore_cover), free it
-            -- But don't free if it's cached (will be freed when evicted from cache)
-            if bookinfo.cover_bb and not cover_bb_used and not BookInfoManager:isCoverCached(self.filepath) then
-                bookinfo.cover_bb:free()
-            end
+            -- NOTE: We don't explicitly free unused cover_bb here anymore.
+            -- The blitbuffer has setAllocated(1) so it will be freed automatically by GC.
+            -- Explicit freeing caused segfaults when widgets still held references to
+            -- the same blitbuffer (e.g., from cached bookinfo objects).
 
             -- Gather some info, mostly for right widget:
             --   file size (self.mandatory) (not available with History)
@@ -1050,7 +1050,7 @@ function ListMenuItem:update()
                 logger.dbg(ptdbg.logprefix, "fontsize_authors ", fontsize_authors)
                 logger.dbg(ptdbg.logprefix, "wright_height ", wright_height)
                 logger.dbg(ptdbg.logprefix, "wright_width ", wright_width)
-                logger.dbg(ptdbg.logprefix, "wright_vertical_padding ", wright_vertical_padding)
+                logger.dbg(ptdbg.logprefix, "wright_right_padding ", wright_right_padding)
             end
 
             -- build the widget which holds wtitle, wauthors, and wright
