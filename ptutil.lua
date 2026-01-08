@@ -419,12 +419,13 @@ function ptutil.build_cover_images(db_res, max_w, max_h)
             local fullpath = directories[i] .. filename
             if util.fileExists(fullpath) then
                 local bookinfo = BookInfoManager:getBookInfo(fullpath, true)
-                if bookinfo then
+                if bookinfo and bookinfo.cover_bb then
                     local border_total = (Size.border.thin * 2)
                     local _, _, scale_factor = BookInfoManager.getCachedCoverSize(
                         bookinfo.cover_w, bookinfo.cover_h, max_img_w, max_img_h)
                     local wimage = ImageWidget:new {
                         image = bookinfo.cover_bb,
+                        image_disposable = false, -- Don't free cached cover_bb
                         scale_factor = scale_factor,
                     }
                     table.insert(covers, FrameContainer:new {
@@ -555,12 +556,11 @@ end
 function ptutil.getSubfolderCoverImages(filepath, max_w, max_h)
     -- Return nil early if filepath is nil
     if not filepath then return nil end
-    
-    -- Check cache first
-    local cached = get_cached_folder_cover(filepath, max_w, max_h)
-    if cached then
-        return cached
-    end
+
+    -- NOTE: We intentionally don't use the folder cover widget cache here.
+    -- Widgets are owned by their parent widget and get freed when the parent
+    -- is freed. Caching and reusing widgets across different parents causes
+    -- use-after-free crashes when swiping between pages.
 
     local db_res = ptutil.query_cover_paths(filepath, false)
     local images = ptutil.build_cover_images(db_res, max_w, max_h)
@@ -579,10 +579,7 @@ function ptutil.getSubfolderCoverImages(filepath, max_w, max_h)
     else
         result = ptutil.build_grid(images, max_w, max_h)
     end
-    
-    -- Cache the result
-    cache_folder_cover(filepath, max_w, max_h, result)
-    
+
     return result
 end
 

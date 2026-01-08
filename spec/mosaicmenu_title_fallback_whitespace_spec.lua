@@ -24,6 +24,7 @@ describe("MosaicMenu Title Fallback Whitespace", function()
                     authors = nil,
                     cover_w = 100,
                     cover_h = 150,
+                    cover_bb = {}, -- Mock cover blitbuffer
                     ignore_cover = false,
                     ignore_meta = false
                 }

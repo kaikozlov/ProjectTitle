@@ -769,7 +769,7 @@ function MosaicMenuItem:update()
             if bookinfo.authors and bookinfo.authors:match("^Wikipedia ") then
                 bookinfo.has_cover = nil
             end
-            if self.do_cover_image and bookinfo.has_cover and not bookinfo.ignore_cover then
+            if self.do_cover_image and bookinfo.has_cover and not bookinfo.ignore_cover and bookinfo.cover_bb then
                 cover_bb_used = true
                 local frame_radius = self.show_progress_bar and Size.radius.default or 0
                 local border_total = Size.border.thin * 2
@@ -890,6 +890,7 @@ function MosaicMenuItem:update()
                 end
                 local image = ImageWidget:new {
                     image = bookinfo.cover_bb,
+                    image_disposable = false, -- Don't free cached cover_bb
                     scale_factor = scale_factor,
                     width = img_width,
                     height = img_height,
@@ -980,11 +981,10 @@ function MosaicMenuItem:update()
                     offset_y = 0,
                 }
             end
-            -- In case we got a blitbuffer and didnt use it (ignore_cover, wikipedia), free it
-            -- But don't free if it's cached (will be freed when evicted from cache)
-            if bookinfo.cover_bb and not cover_bb_used and not BookInfoManager:isCoverCached(self.filepath) then
-                bookinfo.cover_bb:free()
-            end
+            -- NOTE: We don't explicitly free unused cover_bb here anymore.
+            -- The blitbuffer has setAllocated(1) so it will be freed automatically by GC.
+            -- Explicit freeing caused segfaults when widgets still held references to
+            -- the same blitbuffer (e.g., from cached bookinfo objects).
             -- So we can draw an indicator if this book has a description
             if bookinfo.description then
                 self.has_description = true
