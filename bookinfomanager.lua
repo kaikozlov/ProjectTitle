@@ -628,8 +628,8 @@ function BookInfoManager:getBookInfoBatch(filepaths, get_cover)
         table.insert(bind_values, filename)
     end
 
-    local batch_sql = "SELECT " .. table.concat(BOOKINFO_COLS_SET, ",") .. " FROM bookinfo WHERE "
-        .. table.concat(where_clauses, " OR ") .. ";"
+    local batch_sql = "SELECT " .. table.concat(BOOKINFO_COLS_SET, ",") .. " FROM bookinfo WHERE in_progress=0 AND ("
+        .. table.concat(where_clauses, " OR ") .. ");"
     local stmt = self.db_conn:prepare(batch_sql)
     stmt:bind(table.unpack(bind_values))
 
