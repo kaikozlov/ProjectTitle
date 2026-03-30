@@ -76,6 +76,51 @@ end
 local CoverMenu = {}
 local _FileChooser_init_orig = FileChooser.init
 
+function CoverMenu.configureFileChooser(file_chooser, display_mode)
+    if not file_chooser then
+        return
+    end
+
+    file_chooser.display_mode_type = display_mode and display_mode:gsub("_.*", "") or nil
+
+    if not display_mode then
+        file_chooser.updateItems = CoverMenu._FileChooser_updateItems_orig
+        file_chooser.onCloseWidget = CoverMenu._FileChooser_onCloseWidget_orig
+        file_chooser._recalculateDimen = CoverMenu._FileChooser__recalculateDimen_orig
+        file_chooser.genItemTable = CoverMenu._FileChooser_genItemTable_orig
+        file_chooser.updatePageInfo = CoverMenu._Menu_updatePageInfo_orig
+        file_chooser._updateItemsBuildUI = nil
+        file_chooser._do_cover_images = nil
+        file_chooser._do_filename_only = nil
+        file_chooser._do_hint_opened = nil
+        file_chooser._do_center_partial_rows = nil
+        return
+    end
+
+    file_chooser.updateItems = CoverMenu.updateItems
+    file_chooser.onCloseWidget = CoverMenu.onCloseWidget
+    file_chooser.genItemTable = CoverMenu.genItemTable
+    file_chooser.updatePageInfo = CoverMenu.updatePageInfo
+
+    if file_chooser.display_mode_type == "mosaic" then
+        local MosaicMenu = require("mosaicmenu")
+        file_chooser._recalculateDimen = MosaicMenu._recalculateDimen
+        file_chooser._updateItemsBuildUI = MosaicMenu._updateItemsBuildUI
+        file_chooser._do_cover_images = display_mode ~= "mosaic_text"
+        file_chooser._do_hint_opened = true
+        file_chooser._do_center_partial_rows = false
+        file_chooser._do_filename_only = nil
+    elseif file_chooser.display_mode_type == "list" then
+        local ListMenu = require("listmenu")
+        file_chooser._recalculateDimen = ListMenu._recalculateDimen
+        file_chooser._updateItemsBuildUI = ListMenu._updateItemsBuildUI
+        file_chooser._do_cover_images = display_mode ~= "list_only_meta" and display_mode ~= "list_no_meta"
+        file_chooser._do_filename_only = display_mode == "list_no_meta"
+        file_chooser._do_hint_opened = true
+        file_chooser._do_center_partial_rows = nil
+    end
+end
+
 -- Build a render context containing all settings needed for rendering
 -- This avoids repeated getSetting() calls during the render loop
 function CoverMenu:buildRenderContext()
@@ -371,6 +416,7 @@ function CoverMenu:setupLayout()
             self.filesearcher:onShowFileSearch(search_string)
         end,
     }
+    CoverMenu.configureFileChooser(file_chooser, self._pt_filechooser_display_mode)
     self.file_chooser = file_chooser
     self.focused_file = nil -- use it only once
 

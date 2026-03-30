@@ -1011,23 +1011,26 @@ function ProjectTitle:setupFileManagerDisplayMode(display_mode)
         return -- starting in classic mode, nothing to patch
     end
 
+    local CoverMenu = require("covermenu")
+    CoverMenu._FileChooser_updateItems_orig = _FileChooser_updateItems_orig
+    CoverMenu._FileChooser_onCloseWidget_orig = _FileChooser_onCloseWidget_orig
+    CoverMenu._FileChooser__recalculateDimen_orig = _FileChooser__recalculateDimen_orig
+    CoverMenu._FileChooser_genItemTable_orig = _FileChooser_genItemTable_orig
+    CoverMenu._FileManager_setupLayout_orig = _FileManager_setupLayout_orig
+    CoverMenu._Menu_init_orig = _Menu_init_orig
+    CoverMenu._Menu_updatePageInfo_orig = _Menu_updatePageInfo_orig
+
+    if self.ui then
+        self.ui._pt_filechooser_display_mode = display_mode
+    end
+
     if not display_mode then -- classic mode
         ProjectTitle.removeFileDialogButtons("filesearcher")
         _modified_widgets["filesearcher"].updateItemTable = _updateItemTable_orig_funcs["filesearcher"]
-        -- Put back original methods
-        FileChooser.updateItems = _FileChooser_updateItems_orig
-        FileChooser.onCloseWidget = _FileChooser_onCloseWidget_orig
-        FileChooser._recalculateDimen = _FileChooser__recalculateDimen_orig
         ProjectTitle.removeFileDialogButtons("filemanager")
         FileManager.setupLayout = _FileManager_setupLayout_orig
-        -- Also clean-up what we added, even if it does not bother original code
-        FileChooser._updateItemsBuildUI = nil
-        FileChooser._do_cover_images = nil
-        FileChooser._do_filename_only = nil
-        FileChooser._do_hint_opened = nil
-        FileChooser._do_center_partial_rows = nil
         if self.ui and self.ui.file_chooser then
-            self.ui.file_chooser.updatePageInfo = _Menu_updatePageInfo_orig
+            CoverMenu.configureFileChooser(self.ui.file_chooser, nil)
         end
         self:refreshFileManagerInstance()
         return
@@ -1035,45 +1038,10 @@ function ProjectTitle:setupFileManagerDisplayMode(display_mode)
 
     ProjectTitle.addFileDialogButtons("filesearcher")
     _modified_widgets["filesearcher"].updateItemTable = ProjectTitle.getUpdateItemTableFunc(display_mode)
-    -- In both mosaic and list modes, replace original methods with those from
-    -- our generic CoverMenu
-    local CoverMenu = require("covermenu")
-    FileChooser.updateItems = CoverMenu.updateItems
-    FileChooser.onCloseWidget = CoverMenu.onCloseWidget
     ProjectTitle.addFileDialogButtons("filemanager")
-    if FileChooser.display_mode_type == "mosaic" then
-        -- Replace some other original methods with those from our MosaicMenu
-        local MosaicMenu = require("mosaicmenu")
-        FileChooser._recalculateDimen = MosaicMenu._recalculateDimen
-        FileChooser._updateItemsBuildUI = MosaicMenu._updateItemsBuildUI
-        -- Set MosaicMenu behaviour:
-        FileChooser._do_cover_images = display_mode ~= "mosaic_text"
-        FileChooser._do_hint_opened = true -- dogear at bottom
-        -- Don't have "../" centered in empty directories
-        FileChooser._do_center_partial_rows = false
-    elseif FileChooser.display_mode_type == "list" then
-        -- Replace some other original methods with those from our ListMenu
-        local ListMenu = require("listmenu")
-        FileChooser._recalculateDimen = ListMenu._recalculateDimen
-        FileChooser._updateItemsBuildUI = ListMenu._updateItemsBuildUI
-        -- Set ListMenu behaviour:
-        if (display_mode == "list_only_meta") or (display_mode == "list_no_meta") then
-            FileChooser._do_cover_images = false
-        else
-            FileChooser._do_cover_images = true
-        end
-        -- booklist_menu._do_cover_images = display_mode ~= "list_only_meta"
-        FileChooser._do_filename_only = display_mode == "list_no_meta"
-        FileChooser._do_hint_opened = true -- dogear at bottom
-    end
-
-    CoverMenu._FileManager_setupLayout_orig = _FileManager_setupLayout_orig
     FileManager.setupLayout = CoverMenu.setupLayout
-
-    CoverMenu._Menu_init_orig = _Menu_init_orig
-    CoverMenu._Menu_updatePageInfo_orig = _Menu_updatePageInfo_orig
     if self.ui and self.ui.file_chooser then
-        self.ui.file_chooser.updatePageInfo = CoverMenu.updatePageInfo
+        CoverMenu.configureFileChooser(self.ui.file_chooser, display_mode)
     end
 
     if init_done then

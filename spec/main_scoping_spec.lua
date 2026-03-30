@@ -111,11 +111,60 @@ describe("Main Menu Scoping", function()
                 switchItemTable = function() end,
             },
         }
+        CoverBrowser.refreshFileManagerInstance = function() end
 
         CoverBrowser:setupFileManagerDisplayMode("mosaic_image")
 
         assert.equal(original_init, Menu.init)
         assert.equal(original_update_page_info, Menu.updatePageInfo)
+    end)
+
+    it("does not replace shared FileChooser methods when enabling file manager mode", function()
+        local original_update_items = package.loaded["ui/widget/filechooser"].updateItems
+        local original_on_close_widget = package.loaded["ui/widget/filechooser"].onCloseWidget
+        local original_gen_item_table = package.loaded["ui/widget/filechooser"].genItemTable
+        local original_recalculate_dimen = package.loaded["ui/widget/filechooser"]._recalculateDimen
+
+        CoverBrowser.ui = {
+            file_chooser = {
+                _recalculateDimen = function() end,
+                switchItemTable = function() end,
+            },
+        }
+        CoverBrowser.refreshFileManagerInstance = function() end
+
+        CoverBrowser:setupFileManagerDisplayMode("mosaic_image")
+
+        assert.equal(original_update_items, package.loaded["ui/widget/filechooser"].updateItems)
+        assert.equal(original_on_close_widget, package.loaded["ui/widget/filechooser"].onCloseWidget)
+        assert.equal(original_gen_item_table, package.loaded["ui/widget/filechooser"].genItemTable)
+        assert.equal(original_recalculate_dimen, package.loaded["ui/widget/filechooser"]._recalculateDimen)
+    end)
+
+    it("patches FileChooser behavior only on the owned file manager instance", function()
+        local update_item_table = CoverBrowser.getUpdateItemTableFunc("mosaic_image")
+        local file_chooser = {
+            updateItems = function() end,
+            onCloseWidget = function() end,
+            genItemTable = function() end,
+            _recalculateDimen = function() end,
+            switchItemTable = function() end,
+        }
+        CoverBrowser.ui = {
+            file_chooser = file_chooser,
+        }
+        CoverBrowser.refreshFileManagerInstance = function() end
+
+        CoverBrowser:setupFileManagerDisplayMode("mosaic_image")
+        update_item_table({
+            booklist_menu = {
+                name = "history",
+            },
+        })
+
+        assert.equal(CoverMenu.updateItems, file_chooser.updateItems)
+        assert.equal(CoverMenu.onCloseWidget, file_chooser.onCloseWidget)
+        assert.equal(CoverMenu.genItemTable, file_chooser.genItemTable)
     end)
 
     it("patches updatePageInfo only on the owned widget instance", function()
