@@ -21,7 +21,47 @@ describe("CoverMenu", function()
 
         -- Mock FileChooser
         FileChooser = {
-            new = function(self, o) return o end,
+            init = function(self)
+                self._filechooser_init_called = true
+                self.show_parent = self.show_parent or self
+                self.path_items = {}
+                self.screen_w = 600
+                self.screen_h = 800
+                self.inner_dimen = {
+                    w = 600,
+                    h = 800,
+                    copy = function(dimen)
+                        return {
+                            w = dimen.w,
+                            h = dimen.h,
+                            copy = dimen.copy,
+                        }
+                    end,
+                }
+                self.page_info_first_chev = {}
+                self.page_info_left_chev = {}
+                self.page_info_text = {
+                    text = "",
+                    setText = function(_, text) self.page_info_text.text = text end,
+                }
+                self.page_info_right_chev = {}
+                self.page_info_last_chev = {}
+                self.page_return_arrow = {
+                    getSize = function() return { h = 20 } end,
+                }
+                self.return_button = {}
+                self.content_group = {}
+                self.item_table = {}
+                self.layout = { "filechooser_layout" }
+            end,
+            new = function(self, o)
+                o = o or {}
+                setmetatable(o, { __index = self })
+                if o.init then
+                    o:init()
+                end
+                return o
+            end,
             getListItem = function(dirpath, filename, fullpath, attributes, collate)
                 return {
                     text = filename,
@@ -481,6 +521,22 @@ describe("CoverMenu", function()
             menu:setupLayout()
 
             assert.equal("hero", menu.title_bar.center_icon)
+        end)
+
+        it("preserves FileChooser init behavior", function()
+            local menu = {
+                show_parent = {},
+                root_path = "/test",
+                registerKeyEvents = function() end,
+                file_chooser = { path = "/test" }
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+
+            assert.is_true(menu.file_chooser._filechooser_init_called)
+            assert.is_table(menu.file_chooser.path_items)
+            assert.same({ "filechooser_layout" }, menu.layout)
         end)
 
         it("routes file opens through filemanagerutil.openFile", function()

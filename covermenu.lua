@@ -74,6 +74,7 @@ end
 -- Simple holder of methods that will replace those
 -- in the real Menu class or instance
 local CoverMenu = {}
+local _FileChooser_init_orig = FileChooser.init
 
 -- Build a render context containing all settings needed for rendering
 -- This avoids repeated getSetting() calls during the render loop
@@ -352,7 +353,11 @@ function CoverMenu:setupLayout()
         path = self.root_path,
         focused_path = self.focused_file,
         show_parent = self.show_parent,
-        init = CoverMenu.menuInit,
+        init = function(this)
+            CoverMenu.prepareMenuInit(this)
+            _FileChooser_init_orig(this)
+            CoverMenu.finishMenuInit(this)
+        end,
         updatePageInfo = CoverMenu.updatePageInfo,
         height = Screen:getHeight(),
         is_popout = false,
@@ -577,15 +582,21 @@ function CoverMenu:setupLayout()
 end
 
 function CoverMenu:menuInit()
+    CoverMenu.prepareMenuInit(self)
+    CoverMenu._Menu_init_orig(self)
+    CoverMenu.finishMenuInit(self)
+end
+
+function CoverMenu.prepareMenuInit(self)
     -- Initialize render_context early since _recalculateDimen() may be called during init
     -- (before updateItems() which normally builds it)
     self.render_context = CoverMenu.buildRenderContext(self)
 
     -- Initialize widget pool for reusing common widgets
     self.widget_pool = ptutil.WidgetPool:new({ max_per_type = 30 })
+end
 
-    CoverMenu._Menu_init_orig(self)
-
+function CoverMenu.finishMenuInit(self)
     -- pagination controls
     self.page_info = HorizontalGroup:new {
         self.page_info_first_chev,
