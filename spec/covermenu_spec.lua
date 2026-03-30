@@ -363,6 +363,203 @@ describe("CoverMenu", function()
             assert.match("ESCAPE", prepared_sql)
             assert.equal("/home/100\\%\\_semi;quote'/%", bound_values[1])
         end)
+
+        it("keeps metabrowse mode scoped to the menu instance", function()
+            package.loaded["covermenu"] = nil
+            CoverMenu = require("covermenu")
+            CoverMenu._Menu_updatePageInfo_orig = function() end
+            local original_get_list_item = FileChooser.getListItem
+
+            local library_calls = 0
+            BookInfoManager.getLibraryEntries = function()
+                library_calls = library_calls + 1
+                return {
+                    { directory = "/home/library/", filename = "alpha.epub" },
+                }
+            end
+            BookInfoManager.getLibraryRevision = function()
+                return 0
+            end
+            BookInfoManager.getSetting = function()
+                return false
+            end
+            package.loaded["libs/libkoreader-lfs"].attributes = function()
+                return { mode = "file" }
+            end
+            FileChooser.getListItem = function(self, dirpath, filename, fullpath, attributes, collate)
+                return {
+                    text = filename,
+                    path = fullpath,
+                    is_file = true,
+                }
+            end
+
+            CoverMenu._FileChooser_genItemTable_orig = function()
+                return {
+                    { text = "regular.epub", path = "/test/regular.epub", is_file = true },
+                }
+            end
+
+            local first_menu = {
+                show_parent = {},
+                root_path = "/test",
+                onHome = function() end,
+                registerKeyEvents = function() end,
+                file_chooser = { path = "/test" },
+            }
+            for k, v in pairs(CoverMenu) do first_menu[k] = v end
+            first_menu:setupLayout()
+            first_menu.render_context = { is_pathchooser = false }
+            first_menu.title_bar.center_icon_hold_callback()
+
+            local second_menu = {
+                show_parent = {},
+                root_path = "/test",
+                onHome = function() end,
+                registerKeyEvents = function() end,
+                file_chooser = { path = "/test" },
+            }
+            for k, v in pairs(CoverMenu) do second_menu[k] = v end
+            second_menu:setupLayout()
+            second_menu.render_context = { is_pathchooser = false }
+
+            local first_result = first_menu:genItemTable({}, {}, "/test")
+            local second_result = second_menu:genItemTable({}, {}, "/test")
+
+            FileChooser.getListItem = original_get_list_item
+
+            assert.equal(1, #first_result)
+            assert.equal(1, #second_result)
+            assert.equal("alpha.epub", first_result[1].text)
+            assert.equal("regular.epub", second_result[1].text)
+            assert.equal(1, library_calls)
+        end)
+    end)
+
+    describe("instance-scoped session state", function()
+        it("does not reuse another menu's pathchooser state in updatePageInfo", function()
+            local format_footer_calls = 0
+            local original_format_footer_text = package.loaded["ptutil"].formatFooterText
+            local original_get_default_dir = package.loaded["apps/filemanager/filemanagerutil"].getDefaultDir
+            local original_has_folder_shortcut = package.loaded["apps/filemanager/filemanagershortcuts"].hasFolderShortcut
+            package.loaded["ptutil"].formatFooterText = function()
+                format_footer_calls = format_footer_calls + 1
+                return "Footer"
+            end
+            package.loaded["apps/filemanager/filemanagerutil"].getDefaultDir = function()
+                return "/default"
+            end
+            package.loaded["apps/filemanager/filemanagershortcuts"].hasFolderShortcut = function()
+                return false
+            end
+
+            local first_menu = {
+                path = "/library/visible",
+                page_info_text = {
+                    text = "1 / 1",
+                    setText = function(self, text) self.text = text end,
+                },
+                page_info = { getSize = function() return { w = 100 } end },
+                cur_folder_text = {
+                    setMaxWidth = function() end,
+                    setText = function() end,
+                },
+                screen_w = 600,
+                render_context = { is_pathchooser = false },
+            }
+            for k, v in pairs(CoverMenu) do first_menu[k] = v end
+            first_menu:genItemTable({}, {}, "/library/visible")
+
+            local second_menu = {
+                path = "/library/chooser",
+                page_info_text = {
+                    text = "1 / 1",
+                    setText = function(self, text) self.text = text end,
+                },
+                page_info = { getSize = function() return { w = 100 } end },
+                cur_folder_text = {
+                    setMaxWidth = function() end,
+                    setText = function() error("pathchooser footer should not be updated") end,
+                },
+                screen_w = 600,
+                render_context = { is_pathchooser = true },
+            }
+            for k, v in pairs(CoverMenu) do second_menu[k] = v end
+
+            second_menu:updatePageInfo(1)
+
+            package.loaded["ptutil"].formatFooterText = original_format_footer_text
+            package.loaded["apps/filemanager/filemanagerutil"].getDefaultDir = original_get_default_dir
+            package.loaded["apps/filemanager/filemanagershortcuts"].hasFolderShortcut = original_has_folder_shortcut
+
+            assert.equal(0, format_footer_calls)
+        end)
+
+        it("passes the menu instance's metabrowse flag to the footer formatter", function()
+            local meta_browse_flags = {}
+            local original_format_footer_text = package.loaded["ptutil"].formatFooterText
+            local original_get_default_dir = package.loaded["apps/filemanager/filemanagerutil"].getDefaultDir
+            local original_has_folder_shortcut = package.loaded["apps/filemanager/filemanagershortcuts"].hasFolderShortcut
+            package.loaded["ptutil"].formatFooterText = function(_, _, _, _, _, meta_browse_mode)
+                table.insert(meta_browse_flags, meta_browse_mode)
+                return "Footer"
+            end
+            package.loaded["apps/filemanager/filemanagerutil"].getDefaultDir = function()
+                return "/default"
+            end
+            package.loaded["apps/filemanager/filemanagershortcuts"].hasFolderShortcut = function()
+                return false
+            end
+
+            local first_menu = {
+                show_parent = {},
+                root_path = "/test",
+                onHome = function() end,
+                registerKeyEvents = function() end,
+                file_chooser = { path = "/test" },
+                path = "/library/one",
+                page_info_text = {
+                    text = "1 / 1",
+                    setText = function(self, text) self.text = text end,
+                },
+                page_info = { getSize = function() return { w = 100 } end },
+                cur_folder_text = {
+                    setMaxWidth = function() end,
+                    setText = function() end,
+                },
+                screen_w = 600,
+            }
+            for k, v in pairs(CoverMenu) do first_menu[k] = v end
+            first_menu:setupLayout()
+            first_menu.render_context = { is_pathchooser = false }
+            first_menu.title_bar.center_icon_hold_callback()
+
+            local second_menu = {
+                path = "/library/two",
+                page_info_text = {
+                    text = "1 / 1",
+                    setText = function(self, text) self.text = text end,
+                },
+                page_info = { getSize = function() return { w = 100 } end },
+                cur_folder_text = {
+                    setMaxWidth = function() end,
+                    setText = function() end,
+                },
+                screen_w = 600,
+                render_context = { is_pathchooser = false },
+                _pt_is_pathchooser = false,
+                _pt_meta_browse_mode = false,
+            }
+            for k, v in pairs(CoverMenu) do second_menu[k] = v end
+
+            second_menu:updatePageInfo(1)
+
+            package.loaded["ptutil"].formatFooterText = original_format_footer_text
+            package.loaded["apps/filemanager/filemanagerutil"].getDefaultDir = original_get_default_dir
+            package.loaded["apps/filemanager/filemanagershortcuts"].hasFolderShortcut = original_has_folder_shortcut
+
+            assert.same({ false }, meta_browse_flags)
+        end)
     end)
 
     describe("onCloseWidget", function()

@@ -50,20 +50,16 @@ local ptdbg = require("ptdbg")
 -- not found item to self.items_to_update for us to update() them
 -- regularly.
 
--- Store these as local, to be set by some object and re-used by
--- another object (as we plug the methods below to different objects,
--- we can't store them in 'self' if we want another one to use it)
-local previous_path = nil
-local current_path = nil
-local is_pathchooser = false
-
 -- Do some collectgarbage() every few drawings
 local NB_DRAWINGS_BETWEEN_COLLECTGARBAGE = 5
 local nb_drawings_since_last_collectgarbage = 0
 
-local function onFolderUp()
-    if current_path then -- file browser or PathChooser
-        if not util.directoryExists(current_path) then current_path = previous_path end
+local function onFolderUp(menu)
+    if menu and menu._pt_current_path then -- file browser or PathChooser
+        local current_path = menu._pt_current_path
+        if not util.directoryExists(current_path) then
+            current_path = menu._pt_previous_path
+        end
         if not (G_reader_settings:isTrue("lock_home_folder") and
                 current_path == G_reader_settings:readSetting("home_dir")) then
             FileManager.instance.file_chooser:changeToPath(string.format("%s/..", current_path), current_path)
@@ -235,9 +231,13 @@ function CoverMenu:updateItems(select_number, no_recalculate_dimen)
     -- These are used only by extractBooksInDirectory(), which should
     -- use the cover_specs set for FileBrowser, and not those from History.
     -- Hopefully, we get self.path=nil when called from History
+    local is_pathchooser = self.render_context and self.render_context.is_pathchooser == true
+    self._pt_is_pathchooser = is_pathchooser
     if self.path and is_pathchooser == false then
-        if current_path ~= nil and util.directoryExists(current_path) then previous_path = current_path end
-        current_path = self.path
+        if self._pt_current_path ~= nil and util.directoryExists(self._pt_current_path) then
+            self._pt_previous_path = self._pt_current_path
+        end
+        self._pt_current_path = self.path
     end
 
     -- As done in Menu:updateItems()
@@ -339,7 +339,9 @@ function CoverMenu:onCloseWidget()
     BookInfoManager:terminateBackgroundJobs()
     BookInfoManager:closeDbConnection() -- sqlite connection no more needed
     BookInfoManager:cleanUp()           -- clean temporary resources
-    is_pathchooser = false
+    self._pt_is_pathchooser = false
+    self._pt_current_path = nil
+    self._pt_previous_path = nil
 
     -- Cancel any still scheduled update
     if self.items_update_action then
@@ -370,6 +372,29 @@ function CoverMenu:onCloseWidget()
     Menu.onCloseWidget(self)
 end
 
+function CoverMenu:genItemTable(dirs, files, path)
+    local is_pathchooser = ptutil.isPathChooser(self)
+    self._pt_is_pathchooser = is_pathchooser
+    local item_table = CoverMenu._FileChooser_genItemTable_orig(self, dirs, files, path) or {}
+    if not is_pathchooser then
+        local filtered = {}
+        for _, item in ipairs(item_table) do
+            if not item.is_go_up then
+                filtered[#filtered + 1] = item
+            end
+        end
+        item_table = filtered
+    elseif path ~= "/"
+        and G_reader_settings:isTrue("lock_home_folder")
+        and path == G_reader_settings:readSetting("home_dir") then
+        table.insert(item_table, 1, {
+            text = BD.mirroredUILayout() and BD.ltr("../ ⬆") or "⬆ ../",
+            path = path .. "/..",
+            is_go_up = true,
+        })
+    end
+    return item_table
+end
 function CoverMenu:setupLayout()
     self.show_parent = self.show_parent or self
     self.title_bar = TitleBar:new {
@@ -401,7 +426,7 @@ function CoverMenu:setupLayout()
         right3_icon_hold_callback = false,
         -- up folder
         right2_icon = "go_up",
-        right2_icon_tap_callback = function() onFolderUp() end,
+        right2_icon_tap_callback = function() onFolderUp(self.file_chooser or self) end,
         right2_icon_hold_callback = false,
         -- plus menu
         right1_icon = self.selected_files and "check" or "plus",
@@ -653,6 +678,9 @@ function CoverMenu.prepareMenuInit(self)
     -- Initialize render_context early since _recalculateDimen() may be called during init
     -- (before updateItems() which normally builds it)
     self.render_context = CoverMenu.buildRenderContext(self)
+    self._pt_previous_path = nil
+    self._pt_current_path = nil
+    self._pt_is_pathchooser = self.render_context and self.render_context.is_pathchooser == true or false
 
     -- Initialize widget pool for reusing common widgets
     self.widget_pool = ptutil.WidgetPool:new({ max_per_type = 30 })
@@ -784,6 +812,14 @@ function CoverMenu.finishMenuInit(self)
         footer
     }
 
+    -- test to see what style to draw (pathchooser vs one of our fancy modes)
+    -- Use cached value from render_context if available, otherwise compute it
+    if self.render_context and self.render_context.is_pathchooser ~= nil then
+        self._pt_is_pathchooser = self.render_context.is_pathchooser
+    else
+        self._pt_is_pathchooser = ptutil.isPathChooser(self)
+    end
+
     if self.item_table.current then
         self.page = self:getPageNumber(self.item_table.current)
     end
@@ -800,6 +836,13 @@ function CoverMenu:updatePageInfo(select_number)
         curpagetxt = string.match(self.page_info_text.text, "(%d+%D+%d+)") or ""
     end
     self.page_info_text:setText(curpagetxt)
+
+    local is_pathchooser = self.render_context and self.render_context.is_pathchooser
+    if is_pathchooser == nil then
+        is_pathchooser = self._pt_is_pathchooser
+    else
+        self._pt_is_pathchooser = is_pathchooser
+    end
 
     if not is_pathchooser and self.cur_folder_text and type(self.path) == "string" and self.path ~= '' then
         self.cur_folder_text:setMaxWidth(self.screen_w * 0.94 - self.page_info:getSize().w)
