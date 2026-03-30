@@ -149,16 +149,49 @@ describe("Folder Cover Generation Optimization", function()
     end)
 
     describe("Database connection reuse", function()
-        it("folder cover queries reuse BookInfoManager connection", function()
-            -- Note: Current implementation opens its own connection.
-            -- The optimization should reuse BookInfoManager.db_conn
-            -- This test documents the expected behavior after optimization.
+        it("clearing the cache forces the next folder-cover render to query again", function()
+            local query_calls = 0
+            local original_query_cover_paths = ptutil.query_cover_paths
+            local original_getBookInfo = BookInfoManager.getBookInfo
+            local original_getSetting = BookInfoManager.getSetting
+            local original_directory_exists = package.loaded["util"].directoryExists
+            local original_file_exists = package.loaded["util"].fileExists
 
-            -- For now, we just verify the functions exist and don't crash
-            assert.is_function(ptutil.getSubfolderCoverImages,
-                "ptutil should have getSubfolderCoverImages method")
-            assert.is_function(ptutil.getFolderCover,
-                "ptutil should have getFolderCover method")
+            package.loaded["util"].directoryExists = function(path)
+                return path == "/books/folder"
+            end
+            package.loaded["util"].fileExists = function(path)
+                return path:match("^/books/folder/")
+            end
+            ptutil.query_cover_paths = function(folder, include_subfolders)
+                query_calls = query_calls + 1
+                return {
+                    { "/books/folder/", "/books/folder/", "/books/folder/", "/books/folder/" },
+                    { "a.epub", "b.epub", "c.epub", "d.epub" },
+                }
+            end
+            BookInfoManager.getBookInfo = function(self, filepath, get_cover)
+                return {
+                    cover_w = 100,
+                    cover_h = 150,
+                    cover_bb = { filepath = filepath },
+                    has_cover = "Y",
+                }
+            end
+            BookInfoManager.getSetting = function() return nil end
+
+            ptutil.clearFolderCoverCache()
+            ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
+            ptutil.clearFolderCoverCache()
+            ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
+
+            ptutil.query_cover_paths = original_query_cover_paths
+            BookInfoManager.getBookInfo = original_getBookInfo
+            BookInfoManager.getSetting = original_getSetting
+            package.loaded["util"].directoryExists = original_directory_exists
+            package.loaded["util"].fileExists = original_file_exists
+
+            assert.equal(2, query_calls)
         end)
     end)
 

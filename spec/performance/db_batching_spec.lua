@@ -104,7 +104,7 @@ describe("Database Query Batching", function()
             end
         end)
 
-        it("uses fewer queries than individual getBookInfo calls", function()
+        it("prepares one combined statement for a 5-item metadata batch", function()
             local filepaths = {
                 "/books/book1.epub",
                 "/books/book2.epub",
@@ -112,21 +112,38 @@ describe("Database Query Batching", function()
                 "/books/book4.epub",
                 "/books/book5.epub",
             }
+            local prepared_sql = {}
+            local recording_conn = {
+                exec = function() return nil end,
+                prepare = function(self, sql)
+                    table.insert(prepared_sql, sql)
+                    return {
+                        bind = function(self, ...) self._bound = { ... }; return self end,
+                        step = function() return nil end,
+                        reset = function(self) return self end,
+                        clearbind = function(self) self._bound = {}; return self end,
+                        close = function() end,
+                        finalize = function() end,
+                    }
+                end,
+                close = function() end,
+                set_busy_timeout = function() end,
+            }
 
-            -- Warm up DB connection (first call includes DB setup)
-            BookInfoManager:getBookInfoBatch({"/warmup/book.epub"}, false)
+            package.loaded["lua-ljsqlite3/init"] = {
+                open = function() return recording_conn end
+            }
+            package.loaded["bookinfomanager"] = nil
+            BookInfoManager = require("bookinfomanager")
 
-            query_counter:reset()
+            BookInfoManager:openDbConnection()
+            prepared_sql = {}
 
-            -- Batch query should use 1-2 queries max
             BookInfoManager:getBookInfoBatch(filepaths, false)
 
-            local batch_count = query_counter:get_count()
-
-            -- Should be much less than 5 (one per file)
-            -- Expect 1 query for the batch select
-            perf.assert.calls_at_most(batch_count, 3,
-                "Batch query should use at most 3 DB operations, got " .. batch_count)
+            assert.equal(1, #prepared_sql, "Batch lookup should prepare exactly one combined statement")
+            assert.match("WHERE %(", prepared_sql[1])
+            assert.match("OR %(", prepared_sql[1])
         end)
 
         it("handles empty filepath list", function()
@@ -161,8 +178,14 @@ describe("Database Query Batching", function()
                 BookInfoManager:getBookInfoBatch(filepaths, false)
             end)
         end)
+    end)
 
-        it("builds a combined batch statement instead of reusing single-file lookup", function()
+    describe("Query efficiency", function()
+        it("prepares one combined statement for a 9-item metadata batch", function()
+            local filepaths = {}
+            for i = 1, 9 do
+                table.insert(filepaths, "/books/book" .. i .. ".epub")
+            end
             local prepared_sql = {}
             local recording_conn = {
                 exec = function() return nil end,
@@ -189,51 +212,51 @@ describe("Database Query Batching", function()
 
             BookInfoManager:openDbConnection()
             prepared_sql = {}
-
-            BookInfoManager:getBookInfoBatch({
-                "/books/book1.epub",
-                "/books/book2.epub",
-                "/books/book3.epub",
-            }, false)
-
-            assert.equal(1, #prepared_sql, "Batch lookup should prepare exactly one combined statement")
-            assert.match("WHERE %(", prepared_sql[1])
-            assert.match("OR %(", prepared_sql[1])
-        end)
-    end)
-
-    describe("Query efficiency", function()
-        it("batch of 9 items uses at most 3 queries", function()
-            local filepaths = {}
-            for i = 1, 9 do
-                table.insert(filepaths, "/books/book" .. i .. ".epub")
-            end
-
-            -- Warm up DB connection (first call includes DB setup)
-            BookInfoManager:getBookInfoBatch({"/warmup/book.epub"}, false)
-
-            query_counter:reset()
             BookInfoManager:getBookInfoBatch(filepaths, false)
 
-            local count = query_counter:get_count()
-            perf.assert.calls_at_most(count, 3,
-                "9-item batch should use at most 3 queries")
+            assert.equal(1, #prepared_sql)
+            local clause_count = 0
+            for _ in prepared_sql[1]:gmatch("directory=%? AND filename=%?") do
+                clause_count = clause_count + 1
+            end
+            assert.equal(9, clause_count)
         end)
 
         it("reuses existing database connection", function()
-            -- First call opens connection
-            BookInfoManager:getBookInfoBatch({"/books/book1.epub"}, false)
+            local open_count = 0
+            local prepare_count = 0
+            local recording_conn = {
+                exec = function() return nil end,
+                prepare = function(self, sql)
+                    prepare_count = prepare_count + 1
+                    return {
+                        bind = function(self, ...) self._bound = { ... }; return self end,
+                        step = function() return nil end,
+                        reset = function(self) return self end,
+                        clearbind = function(self) self._bound = {}; return self end,
+                        close = function() end,
+                        finalize = function() end,
+                    }
+                end,
+                close = function() end,
+                set_busy_timeout = function() end,
+            }
 
-            local initial_count = query_counter:get_count()
+            package.loaded["lua-ljsqlite3/init"] = {
+                open = function()
+                    open_count = open_count + 1
+                    return recording_conn
+                end
+            }
+            package.loaded["bookinfomanager"] = nil
+            BookInfoManager = require("bookinfomanager")
 
-            -- Second call should reuse connection (fewer setup queries)
-            BookInfoManager:getBookInfoBatch({"/books/book2.epub"}, false)
+            BookInfoManager:getBookInfoBatch({ "/books/book1.epub" }, false)
+            BookInfoManager:getBookInfoBatch({ "/books/book2.epub", "/books/book3.epub" }, false)
 
-            local second_count = query_counter:get_count() - initial_count
-
-            -- Second call should be just the batch query
-            perf.assert.calls_at_most(second_count, 2,
-                "Subsequent batch should reuse connection")
+            assert.equal(2, open_count,
+                "Expected one create/open cycle on first use and no extra opens for the second batch")
+            assert.equal(5, prepare_count, "Expected 3 base prepared statements and 1 batch prepare per batch call")
         end)
     end)
 

@@ -241,5 +241,21 @@ describe("Widget Pool Optimization", function()
 
             assert.is_true(acquire_count > 0, "MosaicMenu should acquire pooled widgets during page build")
         end)
+
+        it("release helper returns acquired widgets to the pool for reuse", function()
+            local pool = ptutil.WidgetPool:new()
+            local menu = {
+                widget_pool = pool,
+                _pooled_widgets_in_use = {},
+            }
+
+            local first = ptutil.acquirePooledWidget(menu, "VerticalSpan", { width = 10 })
+            ptutil.releasePooledWidgets(menu)
+            assert.equal(1, pool:getPoolSize("VerticalSpan"))
+            local second = ptutil.acquirePooledWidget(menu, "VerticalSpan", { width = 20 })
+
+            assert.equal(0, pool:getPoolSize("VerticalSpan"))
+            assert.are.equal(first, second)
+        end)
     end)
 end)
