@@ -629,7 +629,6 @@ local function collect_cover_filepaths(db_res)
         if type(db_res[1]) == "string" then
             for _, filepath in ipairs(db_res) do
                 filepaths[#filepaths + 1] = filepath
-                if #filepaths == 4 then break end
             end
         else
             local directories = db_res[1]
@@ -638,7 +637,6 @@ local function collect_cover_filepaths(db_res)
                 local fullpath = directories[i] .. filename
                 if util.fileExists(fullpath) then
                     table.insert(filepaths, fullpath)
-                    if #filepaths == 4 then break end
                 end
             end
         end
@@ -661,7 +659,6 @@ local function hydrate_cover_entries(filepaths)
                 cover_h = bookinfo.cover_h,
             })
         end
-        if #entries == 4 then break end
     end
     return entries
 end

@@ -852,7 +852,7 @@ function BookInfoManager:getFolderCoverCandidateFilepaths(folder, include_subfol
         return nil
     end
 
-    return select_spread_filepaths(rows, 16)
+    return select_spread_filepaths(rows, 4)
 end
 function BookInfoManager:extractBookInfo(filepath, cover_specs)
     local timer = ptdbg:new()

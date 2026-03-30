@@ -487,7 +487,7 @@ describe("BookInfoManager", function()
             }, result)
         end)
 
-        it("returns a deterministic spread of folder-cover candidates across the full subtree", function()
+        it("returns the final four deterministic folder-cover candidates across the full subtree", function()
             local bound_values
             local rows = {}
             for i = 1, 40 do
@@ -530,10 +530,12 @@ describe("BookInfoManager", function()
             local result = BookInfoManager:getFolderCoverCandidateFilepaths("/books/library", true)
 
             assert.equal("/books/library/%", bound_values[1])
-            assert.equal(16, #result)
-            assert.equal("/books/library/01.epub", result[1])
-            assert.equal("/books/library/40.epub", result[#result])
-            assert.is_true(result[2] ~= "/books/library/02.epub")
+            assert.same({
+                "/books/library/01.epub",
+                "/books/library/14.epub",
+                "/books/library/27.epub",
+                "/books/library/40.epub",
+            }, result)
         end)
     end)
 
