@@ -18,8 +18,9 @@ The plugin follows a strict initialization sequence:
    - Checks if Cover Browser is disabled (required)
    - Verifies fonts are installed in `koreader/fonts/source/`
    - Verifies icons are installed in `koreader/icons/`
-   - Validates KOReader version matches `safe_version` (currently 202510000000)
-   - Can skip version check with `pt-skipversioncheck.txt` file
+   - Uses `safe_version` compatibility gating (currently `202603000000`)
+   - Accepts exact matches, newer KOReader builds, and slightly older builds within the current compatibility window
+   - Can bypass the version gate with `pt-skipversioncheck.txt` file
 
 2. **Settings migration** (main.lua:208-280):
    - Uses versioned config migrations (`config_version` 1-7)
@@ -58,6 +59,8 @@ Or unified across all three with the `unified_display_mode` setting.
 - Stores extracted metadata (title, authors, series, pages, description, keywords)
 - Stores compressed cover images using zstd
 - Handles cover extraction and caching
+- Exposes `BookInfoManager.max_cover_dimen` for patching max extracted cover dimensions
+- Maintains an LRU cache of decompressed covers to reduce repeated zstd work
 - Provides settings storage in `config` table
 
 **covermenu.lua**: Generic menu implementation
@@ -65,6 +68,7 @@ Or unified across all three with the `unified_display_mode` setting.
 - Implements genItemTable() to build file/folder lists
 - Implements setupLayout() for title bar with navigation buttons
 - Implements updatePageInfo() for footer with page controls and status info
+- Builds a per-render `render_context` so hot paths do not repeatedly hit `BookInfoManager:getSetting()`
 
 **listmenu.lua**: List display mode UI implementation
 - Defines ListMenuItem widget for rendering individual list items
@@ -86,8 +90,9 @@ Or unified across all three with the `unified_display_mode` setting.
   - `footer_defaults` - Footer font sizes
   - `bookstatus_defaults` - Book status screen fonts
 - Font definitions using Source Sans 3 and Source Serif 4
-- Helper functions: installFonts(), installIcons(), getFolderCover(), getSubfolderCoverImages()
-- Formatting functions: formatAuthors(), formatSeries(), formatAuthorSeries(), formatTags()
+- Helper functions: installFonts(), installIcons(), `findCover()`, `getFolderCover()`, `query_cover_paths()`, `getSubfolderCoverImages()`
+- Formatting functions: `formatAuthors()`, `formatSeries()`, `formatAuthorSeries()`, `formatTags()`, `formatProgressText()`, `formatFooterText()`
+- Contains performance helpers used by the rendering path, including font-size caching, widget pooling, and an O(1) `LRUCache`
 
 **titlebar.lua**: Custom title bar with navigation buttons (up folder, favorites, history, last document)
 
@@ -99,7 +104,7 @@ Or unified across all three with the `unified_display_mode` setting.
 
 The plugin can auto-generate folder covers in two ways (ptutil.lua:230-509):
 
-1. **Custom folder image**: Looks for `cover.*` or `folder.*` (jpg/png/webp/gif) in the directory
+1. **Custom folder image**: Uses explicit `pt_cover_path` when present, otherwise looks for `cover.*` or `folder.*` (jpg/png/webp/gif) in the directory via `ptutil.findCover()`
 2. **Thumbnail grid**: Queries database for up to 16 random books with covers, displays as:
    - 2×2 grid layout (default)
    - Diagonal stacked layout (if `use_stacked_foldercovers` enabled)
@@ -133,7 +138,11 @@ The plugin is designed to be customizable via KOReader's user patch system:
 - Template provided in `resources/2-userpatch-template.lua`
 - User patches can modify any aspect of the plugin by accessing internal modules
 - Patches targeting the original Cover Browser plugin may still work
-- See `resources/2-font-override.lua` and `resources/2-reader-footer-font-override.lua` for examples
+- Example patch file: `resources/2-font-override.lua`
+- Useful current patch points include:
+  - `ptutil.findCover()`, `ptutil.getFolderCover()`, and `ptutil.query_cover_paths()` for folder-cover behavior
+  - `ptutil.formatProgressText()` and `ptutil.formatFooterText()` for display text customization
+  - `BookInfoManager.max_cover_dimen` for extracted cover sizing
 
 ## Build and Release Commands
 
@@ -195,6 +204,9 @@ Tests use mocked KOReader widgets since the plugin depends on KOReader's UI fram
 - Cover image extraction can be slow, especially with many files
 - Database queries are optimized with indexes on `directory, filename`
 - Cover thumbnails for folders query database with `ORDER BY RANDOM() LIMIT 16`
+- Rendering uses a cached `render_context` to avoid repeated settings lookups in hot paths
+- Decompressed covers are cached via an LRU in `bookinfomanager.lua`
+- `ptutil.lua` includes widget-pool and font-size-cache helpers used by the performance work on `sane`
 - Cache can be pruned (removes deleted files) or emptied completely
 
 ### Localization
