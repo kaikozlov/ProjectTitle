@@ -270,5 +270,47 @@ describe("ListMenu", function()
 
             assert.is_nil(menu._bookinfo_batch)
         end)
+
+        it("prefetches only file entries for the page batch", function()
+            local render_context = mock_ui.default_render_context()
+            local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
+            local seen_filepaths
+            local menu = {
+                width = 600,
+                screen_w = 600,
+                page = 1,
+                perpage = 5,
+                item_table = {
+                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub", is_file = true },
+                    { text = "Folder 1", path = "/books/folder1" },
+                    { text = "Go Up", path = "/books/..", is_go_up = true },
+                },
+                item_group = {},
+                layout = {},
+                items_to_update = {},
+                itemnumber = 1,
+                getBookInfo = function()
+                    return { been_opened = false, status = "unread" }
+                end,
+                item_dimen = { copy = function() return { w = 100, h = 20 } end },
+                item_width = 100,
+                item_height = 20,
+                render_context = render_context,
+            }
+            for k, v in pairs(ListMenu) do menu[k] = v end
+
+            BookInfoManager.getBookInfoBatch = function(self, filepaths, do_cover)
+                seen_filepaths = filepaths
+                return {
+                    ["/books/book1.epub"] = BookInfoManager.BATCH_MISS,
+                }
+            end
+
+            menu:_updateItemsBuildUI()
+
+            BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
+
+            assert.are.same({ "/books/book1.epub" }, seen_filepaths)
+        end)
     end)
 end)

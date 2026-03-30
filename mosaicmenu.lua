@@ -1627,7 +1627,7 @@ function MosaicMenu:_updateItemsBuildUI()
     for idx = 1, self.perpage do
         local index = idx_offset + idx
         local entry = self.item_table[index]
-        if entry and entry.path and not entry.is_go_up then
+        if entry and entry.path and entry.is_file and not entry.is_go_up then
             table.insert(filepaths, entry.path)
         end
     end
