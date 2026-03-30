@@ -56,7 +56,11 @@ describe("BookInfoManager", function()
             err = function() end
         }
         package.loaded["util"] = {
-            fileExists = function() return false end
+            fileExists = function() return false end,
+            splitFilePathName = function(path)
+                local dir, file = path:match("^(.-)([^/]+)$")
+                return dir or "", file or path
+            end
         }
         package.loaded["ffi/zstd"] = {}
         package.loaded["ui/time"] = {
@@ -81,6 +85,19 @@ describe("BookInfoManager", function()
         package.loaded["l10n.gettext"] = gettext_mock
         
         package.loaded["ptdbg"] = {}
+        package.loaded["ptutil"] = {
+            LRUCache = {
+                new = function(_, max_size)
+                    local store = {}
+                    return {
+                        get = function(_, key) return store[key] end,
+                        put = function(_, key, value) store[key] = value end,
+                        clear = function() store = {} end,
+                        invalidate = function(_, key) store[key] = nil end,
+                    }
+                end
+            }
+        }
 
         -- Now require the module
         BookInfoManager = require("bookinfomanager")
@@ -204,6 +221,82 @@ describe("BookInfoManager", function()
             
             assert.is.equal("new_key", bound_args[1])
             assert.is.equal("new_val", bound_args[2])
+        end)
+    end)
+
+    describe("Cover cache safety", function()
+        it("stores a clone so later caller mutations do not poison the cache", function()
+            local filepath = "/books/cache-safe.epub"
+            local original = {
+                has_cover = "Y",
+                series = "Original Series",
+                cover_bb = { id = 1 },
+            }
+
+            BookInfoManager:clearCoverCache()
+            BookInfoManager:cacheCover(filepath, original)
+
+            original.series = "Mutated Before Read"
+
+            local cached_once = BookInfoManager:getCachedCover(filepath)
+            cached_once.has_cover = nil
+            cached_once.series = "Mutated After Read"
+
+            local cached_twice = BookInfoManager:getCachedCover(filepath)
+
+            assert.equal("Y", cached_twice.has_cover)
+            assert.equal("Original Series", cached_twice.series)
+            assert.are.same(original.cover_bb, cached_twice.cover_bb)
+            assert.is_not.equal(cached_once, cached_twice)
+        end)
+    end)
+
+    describe("Cover cache invalidation", function()
+        it("invalidates cached cover on property updates", function()
+            local invalidated = {}
+            local filepath = "/books/update.epub"
+            local original_invalidate = BookInfoManager.invalidateCachedCover
+
+            BookInfoManager.invalidateCachedCover = function(self, path)
+                table.insert(invalidated, path)
+            end
+
+            BookInfoManager:setBookInfoProperties(filepath, { ignore_cover = "Y" })
+
+            BookInfoManager.invalidateCachedCover = original_invalidate
+
+            assert.are.same({ filepath }, invalidated)
+        end)
+
+        it("invalidates cached cover on delete", function()
+            local invalidated = {}
+            local filepath = "/books/delete.epub"
+            local original_invalidate = BookInfoManager.invalidateCachedCover
+
+            BookInfoManager.invalidateCachedCover = function(self, path)
+                table.insert(invalidated, path)
+            end
+
+            BookInfoManager:deleteBookInfo(filepath)
+
+            BookInfoManager.invalidateCachedCover = original_invalidate
+
+            assert.are.same({ filepath }, invalidated)
+        end)
+
+        it("clears cached covers when the database is emptied", function()
+            local cleared = 0
+            local original_clear = BookInfoManager.clearCoverCache
+
+            BookInfoManager.clearCoverCache = function()
+                cleared = cleared + 1
+            end
+
+            BookInfoManager:deleteDb()
+
+            BookInfoManager.clearCoverCache = original_clear
+
+            assert.equal(1, cleared)
         end)
     end)
 end)

@@ -167,11 +167,22 @@ function BookInfoManager:init()
     self.tmpcr3cache = DataStorage:getDataDir() .. "/cache/tmpcr3cache"
 end
 
+local function cloneCachedBookInfo(bookinfo)
+    if not bookinfo then
+        return nil
+    end
+    local copy = {}
+    for k, v in pairs(bookinfo) do
+        copy[k] = v
+    end
+    return copy
+end
+
 -- Cover Cache Management using O(1) LRU cache
 -- Returns cached bookinfo with cover if available, nil otherwise
 function BookInfoManager:getCachedCover(filepath)
     local cache = get_cover_cache()
-    return cache:get(filepath)
+    return cloneCachedBookInfo(cache:get(filepath))
 end
 
 -- Returns true if the filepath has a cached cover
@@ -192,7 +203,7 @@ function BookInfoManager:cacheCover(filepath, bookinfo)
     end
 
     local cache = get_cover_cache()
-    cache:put(filepath, bookinfo)
+    cache:put(filepath, cloneCachedBookInfo(bookinfo))
 end
 
 -- Clears the entire cover cache (call on settings change, etc.)
@@ -301,6 +312,7 @@ function BookInfoManager:deleteDb()
     local stmt = self.db_conn:prepare(query)
     stmt:step()              -- commited
     stmt:clearbind():reset() -- cleanup
+    self:clearCoverCache()
 end
 
 function BookInfoManager:compactDb()
@@ -924,6 +936,7 @@ function BookInfoManager:setBookInfoProperties(filepath, props)
         stmt:step()              -- commited
         stmt:clearbind():reset() -- cleanup
     end
+    self:invalidateCachedCover(filepath)
 end
 
 function BookInfoManager:deleteBookInfo(filepath)
@@ -934,6 +947,7 @@ function BookInfoManager:deleteBookInfo(filepath)
     stmt:bind(directory, filename)
     stmt:step()              -- commited
     stmt:clearbind():reset() -- cleanup
+    self:invalidateCachedCover(filepath)
 end
 
 function BookInfoManager:removeNonExistantEntries()
@@ -956,6 +970,9 @@ function BookInfoManager:removeNonExistantEntries()
         stmt:bind(bcids_to_remove[i])
         stmt:step()              -- commited
         stmt:clearbind():reset() -- cleanup
+    end
+    if #bcids_to_remove > 0 then
+        self:clearCoverCache()
     end
     return T(_("Removed %1 / %2 entries from cache."), #bcids_to_remove, #bcids)
 end
