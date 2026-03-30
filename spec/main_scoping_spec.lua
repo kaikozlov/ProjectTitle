@@ -134,4 +134,18 @@ describe("Main Menu Scoping", function()
         assert.equal(original_update_page_info, Menu.updatePageInfo)
         assert.is_true(package.loaded["apps/filemanager/filemanagerhistory"]._history_update_called())
     end)
+
+    it("initializes widget_pool and render_context on hijacked BookList menus", function()
+        local update_item_table = CoverBrowser.getUpdateItemTableFunc("list_image_meta")
+        local widget = {
+            booklist_menu = {
+                name = "history",
+            },
+        }
+
+        update_item_table(widget)
+
+        assert.is_table(widget.booklist_menu.widget_pool)
+        assert.is_table(widget.booklist_menu.render_context)
+    end)
 end)

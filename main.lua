@@ -1135,6 +1135,7 @@ function ProjectTitle.getUpdateItemTableFunc(display_mode)
             -- In both mosaic and list modes, replace original methods with those from
             -- our generic CoverMenu
             local CoverMenu = require("covermenu")
+            CoverMenu.prepareMenuInit(booklist_menu)
             booklist_menu.updateItems = CoverMenu.updateItems
             booklist_menu.onCloseWidget = CoverMenu.onCloseWidget
             booklist_menu.updatePageInfo = CoverMenu.updatePageInfo
