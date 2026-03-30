@@ -1,6 +1,7 @@
 local Archiver = require("ffi/archiver")
 local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
+local Cache = require("cache")
 local DataStorage = require("datastorage")
 local Device = require("device")
 local DocumentRegistry = require("document/documentregistry")
@@ -116,18 +117,22 @@ for i = 1, #BOOKINFO_COLS_SET do
     table.insert(bookinfo_values_sql, "?")
 end
 
--- LRU Cover Cache for decompressed cover images
--- Avoids repeated zstd decompression for recently viewed covers
-local COVER_CACHE_SIZE = 25  -- ~35MB worst case at 1.4MB per cover
--- Use the O(1) LRU cache from ptutil (lazy-initialized)
-local cover_lru_cache = nil
+local BookInfoManager = {}
+
+-- Cache decompressed covers with KOReader's size-aware cache wrapper.
+local COVER_CACHE_MAX_BYTES = 24 * 1024 * 1024
+local cover_cache = nil
 
 local function get_cover_cache()
-    if not cover_lru_cache then
-        local ptutil = require("ptutil")
-        cover_lru_cache = ptutil.LRUCache:new(COVER_CACHE_SIZE)
+    if not cover_cache then
+        local avg_itemsize = BookInfoManager.max_cover_dimen * BookInfoManager.max_cover_dimen * 4
+        cover_cache = Cache:new{
+            size = COVER_CACHE_MAX_BYTES,
+            avg_itemsize = avg_itemsize,
+            enable_eviction_cb = false,
+        }
     end
-    return cover_lru_cache
+    return cover_cache
 end
 
 -- Build our most often used SQL queries according to columns
@@ -164,8 +169,6 @@ local UNSUPPORTED_REASONS = {
     }
 }
 
-local BookInfoManager = {}
-
 BookInfoManager.max_cover_dimen = 600 -- tested 400, 600, and 800
 BookInfoManager.BATCH_MISS = {
     _batch_miss = true,
@@ -197,6 +200,32 @@ local function cloneCachedBookInfo(bookinfo)
         copy[k] = v
     end
     return copy
+end
+
+local function get_cover_cache_item_size(bookinfo)
+    if not bookinfo or not bookinfo.cover_bb then
+        return nil
+    end
+
+    local stride = tonumber(bookinfo.cover_bb_stride)
+    if not stride and bookinfo.cover_bb.stride then
+        stride = tonumber(bookinfo.cover_bb.stride)
+    end
+
+    local height = tonumber(bookinfo.cover_h)
+    if not height then
+        if bookinfo.cover_bb.h then
+            height = tonumber(bookinfo.cover_bb.h)
+        elseif bookinfo.cover_bb.getHeight then
+            height = tonumber(bookinfo.cover_bb:getHeight())
+        end
+    end
+
+    if not stride or not height then
+        return nil
+    end
+
+    return stride * height
 end
 
 local function buildBookInfoFromRow(row, cols, get_cover)
@@ -318,8 +347,13 @@ function BookInfoManager:cacheCover(filepath, bookinfo)
         return
     end
 
+    local cover_size = get_cover_cache_item_size(bookinfo)
+    if not cover_size then
+        return
+    end
+
     local cache = get_cover_cache()
-    cache:put(filepath, cloneCachedBookInfo(bookinfo))
+    cache:insert(filepath, cloneCachedBookInfo(bookinfo), cover_size)
 end
 
 -- Clears the entire cover cache (call on settings change, etc.)
@@ -335,7 +369,9 @@ end
 -- NOTE: We don't free the blitbuffer - it might still be in use by a widget.
 function BookInfoManager:invalidateCachedCover(filepath)
     local cache = get_cover_cache()
-    cache:invalidate(filepath)
+    if cache.cache and cache.cache.delete then
+        cache.cache:delete(filepath)
+    end
     clearFolderCoverCache(filepath)
 end
 

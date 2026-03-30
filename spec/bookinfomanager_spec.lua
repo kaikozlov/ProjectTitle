@@ -6,6 +6,7 @@ describe("BookInfoManager", function()
     local mock_conn
     local folder_cache_clear_count = 0
     local folder_cache_invalidations = {}
+    local created_cover_caches = {}
 
     setup(function()
         -- Mock dependencies
@@ -68,6 +69,102 @@ describe("BookInfoManager", function()
         package.loaded["ffi/zstd"] = {}
         package.loaded["ui/time"] = {
             s = function(val) return val end
+        }
+        package.loaded["cache"] = {
+            new = function(_, opts)
+                local used_size = 0
+                local access_counter = 0
+                local entries = {}
+                local cache
+
+                local function count_entries()
+                    local count = 0
+                    for _ in pairs(entries) do
+                        count = count + 1
+                    end
+                    return count
+                end
+
+                local function evict_if_needed()
+                    while used_size > opts.size do
+                        local lru_key
+                        local lru_stamp
+                        for key, entry in pairs(entries) do
+                            if not lru_stamp or entry.stamp < lru_stamp then
+                                lru_key = key
+                                lru_stamp = entry.stamp
+                            end
+                        end
+                        if not lru_key then
+                            break
+                        end
+                        used_size = used_size - entries[lru_key].size
+                        entries[lru_key] = nil
+                    end
+                end
+
+                cache = {
+                    size = opts.size,
+                    avg_itemsize = opts.avg_itemsize,
+                    slots = math.ceil(opts.size / opts.avg_itemsize),
+                    cache = {
+                        get = function(_, key)
+                            local entry = entries[key]
+                            if not entry then
+                                return nil
+                            end
+                            access_counter = access_counter + 1
+                            entry.stamp = access_counter
+                            return entry.value
+                        end,
+                        set = function(_, key, value, size)
+                            local entry_size = size or 0
+                            if entries[key] then
+                                used_size = used_size - entries[key].size
+                            end
+                            access_counter = access_counter + 1
+                            entries[key] = {
+                                value = value,
+                                size = entry_size,
+                                stamp = access_counter,
+                            }
+                            used_size = used_size + entry_size
+                            evict_if_needed()
+                        end,
+                        delete = function(_, key)
+                            if entries[key] then
+                                used_size = used_size - entries[key].size
+                                entries[key] = nil
+                            end
+                        end,
+                        clear = function()
+                            entries = {}
+                            used_size = 0
+                        end,
+                        used_size = function()
+                            return used_size
+                        end,
+                        used_slots = function()
+                            return count_entries()
+                        end,
+                    },
+                    get = function(self, key)
+                        return self.cache:get(key)
+                    end,
+                    check = function(self, key)
+                        return self.cache:get(key)
+                    end,
+                    insert = function(self, key, value, size)
+                        return self.cache:set(key, value, size)
+                    end,
+                    clear = function(self)
+                        self.cache:clear()
+                    end,
+                }
+
+                table.insert(created_cover_caches, cache)
+                return cache
+            end,
         }
         
         -- Mock global G_reader_settings
@@ -461,6 +558,8 @@ describe("BookInfoManager", function()
             local original = {
                 has_cover = "Y",
                 series = "Original Series",
+                cover_h = 1,
+                cover_bb_stride = 1024,
                 cover_bb = { id = 1 },
             }
 
@@ -479,6 +578,48 @@ describe("BookInfoManager", function()
             assert.equal("Original Series", cached_twice.series)
             assert.are.same(original.cover_bb, cached_twice.cover_bb)
             assert.is_not.equal(cached_once, cached_twice)
+        end)
+
+        it("evicts cached covers by byte budget rather than unbounded slot growth", function()
+            local mib = 1024 * 1024
+
+            local function make_cached_cover(id)
+                return {
+                    has_cover = "Y",
+                    cover_h = 1,
+                    cover_bb_stride = 10 * mib,
+                    cover_bb = { id = id },
+                }
+            end
+
+            BookInfoManager:clearCoverCache()
+            BookInfoManager:cacheCover("/books/one.epub", make_cached_cover(1))
+            BookInfoManager:cacheCover("/books/two.epub", make_cached_cover(2))
+            BookInfoManager:cacheCover("/books/three.epub", make_cached_cover(3))
+
+            assert.is_false(BookInfoManager:isCoverCached("/books/one.epub"))
+            assert.is_true(BookInfoManager:isCoverCached("/books/two.epub"))
+            assert.is_true(BookInfoManager:isCoverCached("/books/three.epub"))
+        end)
+
+        it("removes specific cached covers and clears the full cache through the public API", function()
+            local cached = {
+                has_cover = "Y",
+                cover_h = 1,
+                cover_bb_stride = 1024,
+                cover_bb = { id = 7 },
+            }
+
+            BookInfoManager:clearCoverCache()
+            BookInfoManager:cacheCover("/books/remove.epub", cached)
+            BookInfoManager:cacheCover("/books/keep.epub", cached)
+
+            BookInfoManager:invalidateCachedCover("/books/remove.epub")
+            assert.is_false(BookInfoManager:isCoverCached("/books/remove.epub"))
+            assert.is_true(BookInfoManager:isCoverCached("/books/keep.epub"))
+
+            BookInfoManager:clearCoverCache()
+            assert.is_false(BookInfoManager:isCoverCached("/books/keep.epub"))
         end)
     end)
 

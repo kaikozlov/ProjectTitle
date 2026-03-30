@@ -1730,4 +1730,148 @@ end
 -- Export LRUCache
 ptutil.LRUCache = LRUCache
 
+function ptutil.formatProgressText(status, bookinfo, pages, draw_progressbar, percent_finished, progress_strings, render_context)
+    local pages_str = ""
+    local pages_left_str = ""
+    local percent_str = ""
+    local progress_str = ""
+    local show_pages_read = (render_context and render_context.show_pages_read_as_progress ~= nil)
+        and render_context.show_pages_read_as_progress
+        or BookInfoManager:getSetting("show_pages_read_as_progress")
+    local show_pages_left = (render_context and render_context.show_pages_left_in_progress ~= nil)
+        and render_context.show_pages_left_in_progress
+        or BookInfoManager:getSetting("show_pages_left_in_progress")
+
+    if status == "complete" then
+        progress_str = progress_strings.finished
+    elseif status == "abandoned" then
+        progress_str = progress_strings.abandoned
+    elseif percent_finished then
+        progress_str = progress_strings.reading
+        if not draw_progressbar then
+            percent_str = math.floor(100 * percent_finished) .. "%"
+        end
+        if pages then
+            if show_pages_read then
+                percent_str = progress_strings.reading
+                pages_str = T(_("Page %1 of %2"), Math.round(percent_finished * pages), pages)
+            end
+            if show_pages_left then
+                percent_str = progress_strings.reading
+                pages_left_str = T(_("%1 pages left"), Math.round(pages - percent_finished * pages), pages)
+            end
+        end
+    elseif not bookinfo._no_provider then
+        progress_str = progress_strings.unread
+    end
+
+    return progress_str, percent_str, pages_str, pages_left_str
+end
+
+function ptutil.formatFooterText(footer_config, _manager, path, fm_default_dir, has_shortcut, meta_browse_mode)
+    if BookInfoManager:getSetting("replace_footer_text") then
+        local config = footer_config or {
+            order = {
+                "clock",
+                "wifi",
+                "battery",
+                "frontlight",
+                "frontlight_warmth",
+            },
+            wifi_show_disabled = true,
+            frontlight_show_off = true,
+        }
+        local genItemText = {
+            battery = function()
+                if Device:hasBattery() then
+                    local powerd = Device:getPowerDevice()
+                    local batt_lvl = powerd:getCapacity()
+                    local batt_symbol = powerd:getBatterySymbol(powerd:isCharged(), powerd:isCharging(), batt_lvl)
+                    local text = BD.wrap(batt_symbol) .. BD.wrap(batt_lvl .. "%")
+                    if Device:hasAuxBattery() and powerd:isAuxBatteryConnected() then
+                        local aux_batt_lvl = powerd:getAuxCapacity()
+                        local aux_batt_symbol =
+                            powerd:getBatterySymbol(powerd:isAuxCharged(), powerd:isAuxCharging(), aux_batt_lvl)
+                        text = text ..
+                            " " .. BD.wrap("+") .. BD.wrap(aux_batt_symbol) .. BD.wrap(aux_batt_lvl .. "%")
+                    end
+                    return text
+                end
+            end,
+            clock = function()
+                local datetime = require("datetime")
+                return datetime.secondsToHour(os.time(), G_reader_settings:isTrue("twelve_hour_clock"))
+            end,
+            frontlight = function()
+                if Device:hasFrontlight() then
+                    local prefix = "✺" -- "☼"
+                    local powerd = Device:getPowerDevice()
+                    if powerd:isFrontlightOn() then
+                        if Device:isCervantes() or Device:isKobo() then
+                            return (prefix .. "%d%%"):format(powerd:frontlightIntensity())
+                        else
+                            return (prefix .. "%d"):format(powerd:frontlightIntensity())
+                        end
+                    else
+                        return config.frontlight_show_off and T(_("%1Off"), prefix)
+                    end
+                end
+            end,
+            frontlight_warmth = function()
+                if Device:hasNaturalLight() then
+                    local prefix = "⊛" -- "💡"
+                    local powerd = Device:getPowerDevice()
+                    if powerd:isFrontlightOn() then
+                        local warmth = powerd:frontlightWarmth()
+                        if warmth then return (prefix .. "%d%%"):format(warmth) end
+                    else
+                        return config.frontlight_show_off and T(_("%1Off"), prefix)
+                    end
+                end
+            end,
+            wifi = function()
+                local NetworkMgr = require("ui/network/manager")
+                return NetworkMgr:isWifiOn() and "" or (config.wifi_show_disabled and "")
+            end,
+        }
+        local device_statuses = {}
+        local alt_footer = nil
+        for _, item in ipairs(config.order) do
+            local text = genItemText[item]()
+            if text then table.insert(device_statuses, text) end
+        end
+        if #device_statuses > 0 then alt_footer = table.concat(device_statuses, ptutil.separator.dot) end
+        if _manager and type(_manager.name) == "string" then
+            return ""
+        else
+            return alt_footer
+        end
+    else
+        local display_path = ""
+        if (path == fm_default_dir or
+                            path == G_reader_settings:readSetting("home_dir")) and
+                            G_reader_settings:nilOrTrue("shorten_home_dir") then
+            display_path = _("Home")
+        elseif _manager and type(_manager.name) == "string" then
+            display_path = ""
+        else
+            -- show only the current folder name, not the whole path
+            local folder_name = "/"
+            local crumbs = {}
+            for crumb in string.gmatch(path, "[^/]+") do
+                table.insert(crumbs, crumb)
+            end
+            if #crumbs > 1 then
+                folder_name = table.concat(crumbs, "", #crumbs, #crumbs)
+            end
+            -- add a star if folder is in shortcuts
+            if has_shortcut then
+                folder_name = "★ " .. folder_name
+            end
+            display_path = folder_name
+        end
+        if meta_browse_mode == true then display_path = _("Library") end
+        return display_path
+    end
+end
 return ptutil

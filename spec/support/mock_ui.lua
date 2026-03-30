@@ -108,6 +108,105 @@ local function setup_mocks()
             }
         end
     }
+
+    package.loaded["cache"] = {
+        new = function(_, opts)
+            local used_size = 0
+            local entries = {}
+            local access_counter = 0
+            local cache
+
+            local function entry_count()
+                local count = 0
+                for _ in pairs(entries) do
+                    count = count + 1
+                end
+                return count
+            end
+
+            local function evict_if_needed()
+                while opts.size and used_size > opts.size do
+                    local lru_key
+                    local lru_stamp
+                    for key, entry in pairs(entries) do
+                        if not lru_stamp or entry.stamp < lru_stamp then
+                            lru_key = key
+                            lru_stamp = entry.stamp
+                        end
+                    end
+                    if not lru_key then
+                        break
+                    end
+                    used_size = used_size - entries[lru_key].size
+                    entries[lru_key] = nil
+                end
+            end
+
+            cache = {
+                size = opts.size,
+                avg_itemsize = opts.avg_itemsize,
+                slots = opts.slots or (opts.size and opts.avg_itemsize and math.ceil(opts.size / opts.avg_itemsize)) or nil,
+                cache = {
+                    get = function(_, key)
+                        local entry = entries[key]
+                        if not entry then
+                            return nil
+                        end
+                        access_counter = access_counter + 1
+                        entry.stamp = access_counter
+                        return entry.value
+                    end,
+                    set = function(_, key, value, size)
+                        local entry_size = size or 0
+                        if entries[key] then
+                            used_size = used_size - entries[key].size
+                        end
+                        access_counter = access_counter + 1
+                        entries[key] = {
+                            value = value,
+                            size = entry_size,
+                            stamp = access_counter,
+                        }
+                        used_size = used_size + entry_size
+                        evict_if_needed()
+                    end,
+                    delete = function(_, key)
+                        if entries[key] then
+                            used_size = used_size - entries[key].size
+                            entries[key] = nil
+                        end
+                    end,
+                    clear = function()
+                        entries = {}
+                        used_size = 0
+                    end,
+                    used_size = function()
+                        return used_size
+                    end,
+                    used_slots = function()
+                        return entry_count()
+                    end,
+                    pairs = function()
+                        return next, entries, nil
+                    end,
+                },
+                get = function(self, key)
+                    return self.cache:get(key)
+                end,
+                check = function(self, key)
+                    return self.cache:get(key)
+                end,
+                insert = function(self, key, value, size)
+                    return self.cache:set(key, value, size)
+                end,
+                clear = function(self)
+                    self.cache:clear()
+                end,
+            }
+
+            return cache
+        end,
+    }
     
     -- Mock Widgets
     package.loaded["ui/widget/container/centercontainer"] = mock_widget("CenterContainer")
