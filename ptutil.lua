@@ -567,8 +567,12 @@ end
 
 local function hydrate_cover_entries(filepaths)
     local entries = {}
+    local bookinfo_batch = {}
+    if filepaths and #filepaths > 0 then
+        bookinfo_batch = BookInfoManager:getBookInfoBatch(filepaths, true) or {}
+    end
     for _, filepath in ipairs(filepaths or {}) do
-        local bookinfo = BookInfoManager:getBookInfo(filepath, true)
+        local bookinfo = bookinfo_batch[filepath]
         if bookinfo and bookinfo.cover_bb then
             table.insert(entries, {
                 cover_bb = bookinfo.cover_bb,
