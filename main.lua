@@ -1020,14 +1020,15 @@ function ProjectTitle:setupFileManagerDisplayMode(display_mode)
         FileChooser._recalculateDimen = _FileChooser__recalculateDimen_orig
         ProjectTitle.removeFileDialogButtons("filemanager")
         FileManager.setupLayout = _FileManager_setupLayout_orig
-        Menu.init = _Menu_init_orig
-        Menu.updatePageInfo = _Menu_updatePageInfo_orig
         -- Also clean-up what we added, even if it does not bother original code
         FileChooser._updateItemsBuildUI = nil
         FileChooser._do_cover_images = nil
         FileChooser._do_filename_only = nil
         FileChooser._do_hint_opened = nil
         FileChooser._do_center_partial_rows = nil
+        if self.ui and self.ui.file_chooser then
+            self.ui.file_chooser.updatePageInfo = _Menu_updatePageInfo_orig
+        end
         self:refreshFileManagerInstance()
         return
     end
@@ -1071,9 +1072,9 @@ function ProjectTitle:setupFileManagerDisplayMode(display_mode)
 
     CoverMenu._Menu_init_orig = _Menu_init_orig
     CoverMenu._Menu_updatePageInfo_orig = _Menu_updatePageInfo_orig
-
-    Menu.init = CoverMenu.menuInit
-    Menu.updatePageInfo = CoverMenu.updatePageInfo
+    if self.ui and self.ui.file_chooser then
+        self.ui.file_chooser.updatePageInfo = CoverMenu.updatePageInfo
+    end
 
     if init_done then
         self:refreshFileManagerInstance()
@@ -1136,6 +1137,7 @@ function ProjectTitle.getUpdateItemTableFunc(display_mode)
             local CoverMenu = require("covermenu")
             booklist_menu.updateItems = CoverMenu.updateItems
             booklist_menu.onCloseWidget = CoverMenu.onCloseWidget
+            booklist_menu.updatePageInfo = CoverMenu.updatePageInfo
 
             ProjectTitle.initGrid(booklist_menu, display_mode)
             if booklist_menu.display_mode_type == "mosaic" then

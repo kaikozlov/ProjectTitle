@@ -352,6 +352,11 @@ function CoverMenu:setupLayout()
         path = self.root_path,
         focused_path = self.focused_file,
         show_parent = self.show_parent,
+        init = CoverMenu.menuInit,
+        updatePageInfo = CoverMenu.updatePageInfo,
+        height = Screen:getHeight(),
+        is_popout = false,
+        is_borderless = true,
         file_filter = function(filename) return DocumentRegistry:hasProvider(filename) end,
         close_callback = function() return self:onClose() end,
         -- allow left bottom tap gesture, otherwise it is eaten by hidden return button
