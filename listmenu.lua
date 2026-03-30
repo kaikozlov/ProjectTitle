@@ -426,14 +426,8 @@ function ListMenuItem:update()
             --   file size (self.mandatory) (not available with History)
             --   file type
             --   pages read / nb of pages (not available for crengine doc not opened)
-            -- Current page / pages are available or more accurate in .sdr/metadata.lua
-            -- We use a cache (cleaned at end of this browsing session) to store
-            -- page, percent read and book status from sidecar files, to avoid
-            -- re-parsing them when re-rendering a visited page
-
-            if not self.menu.cover_info_cache then
-                self.menu.cover_info_cache = {}
-            end
+            -- Current page / pages are available or more accurate in .sdr/metadata.lua.
+            -- KOReader's BookList already caches this sidecar-derived state.
 
             local progress_strings = {
                 finished = _("Finished"),

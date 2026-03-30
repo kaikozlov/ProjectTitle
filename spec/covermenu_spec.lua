@@ -427,7 +427,7 @@ describe("CoverMenu", function()
             assert.is_true(freed)
         end)
 
-        it("clears cover_info_cache", function()
+        it("does not manage cover_info_cache state on close", function()
             local menu = {
                 item_group = { free = function() end },
                 cover_info_cache = { some = "data" },
@@ -437,7 +437,7 @@ describe("CoverMenu", function()
 
             menu:onCloseWidget()
 
-            assert.is_nil(menu.cover_info_cache)
+            assert.same({ some = "data" }, menu.cover_info_cache)
         end)
 
         it("only runs once when called multiple times", function()

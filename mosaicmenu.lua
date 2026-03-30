@@ -784,15 +784,8 @@ function MosaicMenuItem:update()
         local book_info = self.menu.getBookInfo(self.filepath)
         self.been_opened = book_info.been_opened
         if bookinfo and is_pathchooser == false then -- This book is known
-            -- Current page / pages are available or more accurate in .sdr/metadata.lua
-            -- We use a cache (cleaned at end of this browsing session) to store
-            -- page, percent read and book status from sidecar files, to avoid
-            -- re-parsing them when re-rendering a visited page
-            -- This cache is shared with ListMenu, so we need to fill it with the same
-            -- info here than there, even if we don't need them all here.
-            if not self.menu.cover_info_cache then
-                self.menu.cover_info_cache = {}
-            end
+            -- Current page / pages are available or more accurate in .sdr/metadata.lua.
+            -- KOReader's BookList already caches this sidecar-derived state.
 
             local percent_finished = book_info.percent_finished
             self.percent_finished = percent_finished
