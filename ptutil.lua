@@ -61,6 +61,39 @@ function ptutil.clearFolderCoverCache()
     explicit_folder_image_size_cache = {}
 end
 
+function ptutil.invalidateFolderCoverCache(path_or_directory)
+    if not path_or_directory or path_or_directory == "" then
+        return
+    end
+
+    local function normalize_directory(path)
+        if not path or path == "" then
+            return path
+        end
+        local normalized = tostring(path):gsub("/+$", "")
+        if normalized == "" then
+            return "/"
+        end
+        return normalized
+    end
+
+    local directory = path_or_directory
+    if not util.directoryExists(directory) then
+        directory = util.splitFilePathName(path_or_directory)
+    end
+    directory = normalize_directory(directory)
+    if not directory or directory == "" then
+        return
+    end
+
+    local cache_prefix = directory .. "|"
+    for key, _ in pairs(folder_cover_cache) do
+        if key:sub(1, #cache_prefix) == cache_prefix then
+            folder_cover_cache[key] = nil
+        end
+    end
+end
+
 -- Get cache key for folder cover
 local function get_folder_cache_key(filepath, max_w, max_h)
     return filepath .. "|" .. tostring(max_w) .. "|" .. tostring(max_h)

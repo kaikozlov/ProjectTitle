@@ -226,10 +226,14 @@ local function buildBookInfoFromRow(row, cols, get_cover)
     return bookinfo
 end
 
-local function clearFolderCoverCache()
+local function clearFolderCoverCache(path_or_directory)
     local ok, ptutil = pcall(require, "ptutil")
-    if ok and ptutil.clearFolderCoverCache then
-        ptutil.clearFolderCoverCache()
+    if ok then
+        if path_or_directory and ptutil.invalidateFolderCoverCache then
+            ptutil.invalidateFolderCoverCache(path_or_directory)
+        elseif ptutil.clearFolderCoverCache then
+            ptutil.clearFolderCoverCache()
+        end
     end
 end
 
@@ -275,7 +279,7 @@ end
 function BookInfoManager:invalidateCachedCover(filepath)
     local cache = get_cover_cache()
     cache:invalidate(filepath)
-    clearFolderCoverCache()
+    clearFolderCoverCache(filepath)
 end
 
 -- DB management

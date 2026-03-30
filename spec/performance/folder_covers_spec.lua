@@ -103,12 +103,17 @@ describe("Folder Cover Generation Optimization", function()
             local original_getSetting = BookInfoManager.getSetting
             local original_directory_exists = package.loaded["util"].directoryExists
             local original_file_exists = package.loaded["util"].fileExists
+            local original_split_file_path_name = package.loaded["util"].splitFilePathName
 
             package.loaded["util"].directoryExists = function(path)
                 return path == "/books/folder"
             end
             package.loaded["util"].fileExists = function(path)
                 return path:match("^/books/folder/")
+            end
+            package.loaded["util"].splitFilePathName = function(path)
+                local directory, filename = path:match("^(.-)/([^/]+)$")
+                return directory, filename
             end
             ptutil.query_cover_paths = function(folder, include_subfolders)
                 query_calls = query_calls + 1
@@ -247,8 +252,70 @@ describe("Folder Cover Generation Optimization", function()
             BookInfoManager.getSetting = original_getSetting
             package.loaded["util"].directoryExists = original_directory_exists
             package.loaded["util"].fileExists = original_file_exists
+            package.loaded["util"].splitFilePathName = original_split_file_path_name
 
             assert.equal(2, query_calls)
+        end)
+
+        it("keeps unrelated folder-cover selections cached after a single-book update", function()
+            local query_calls = {
+                ["/books/folder-one"] = 0,
+                ["/books/folder-two"] = 0,
+            }
+            local original_query_cover_paths = ptutil.query_cover_paths
+            local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
+            local original_getSetting = BookInfoManager.getSetting
+            local original_directory_exists = package.loaded["util"].directoryExists
+            local original_file_exists = package.loaded["util"].fileExists
+            local original_split_file_path_name = package.loaded["util"].splitFilePathName
+
+            package.loaded["util"].directoryExists = function(path)
+                return path == "/books/folder-one" or path == "/books/folder-two"
+            end
+            package.loaded["util"].fileExists = function(path)
+                return path:match("^/books/folder%-one/") or path:match("^/books/folder%-two/")
+            end
+            package.loaded["util"].splitFilePathName = function(path)
+                local directory, filename = path:match("^(.-)/([^/]+)$")
+                return directory, filename
+            end
+            ptutil.query_cover_paths = function(folder, include_subfolders)
+                query_calls[folder] = (query_calls[folder] or 0) + 1
+                return {
+                    { folder .. "/", folder .. "/", folder .. "/", folder .. "/" },
+                    { "a.epub", "b.epub", "c.epub", "d.epub" },
+                }
+            end
+            BookInfoManager.getBookInfoBatch = function(self, filepaths, get_cover)
+                local results = {}
+                for _, filepath in ipairs(filepaths) do
+                    results[filepath] = {
+                        cover_w = 100,
+                        cover_h = 150,
+                        cover_bb = { filepath = filepath },
+                        has_cover = "Y",
+                    }
+                end
+                return results
+            end
+            BookInfoManager.getSetting = function() return nil end
+
+            ptutil.clearFolderCoverCache()
+            ptutil.getSubfolderCoverImages("/books/folder-one", 100, 100)
+            ptutil.getSubfolderCoverImages("/books/folder-two", 100, 100)
+            BookInfoManager:setBookInfoProperties("/books/folder-one/a.epub", { ignore_cover = "Y" })
+            ptutil.getSubfolderCoverImages("/books/folder-one", 100, 100)
+            ptutil.getSubfolderCoverImages("/books/folder-two", 100, 100)
+
+            ptutil.query_cover_paths = original_query_cover_paths
+            BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
+            BookInfoManager.getSetting = original_getSetting
+            package.loaded["util"].directoryExists = original_directory_exists
+            package.loaded["util"].fileExists = original_file_exists
+            package.loaded["util"].splitFilePathName = original_split_file_path_name
+
+            assert.equal(2, query_calls["/books/folder-one"])
+            assert.equal(1, query_calls["/books/folder-two"])
         end)
 
         it("hydrates folder-cover selections with getBookInfoBatch", function()
@@ -358,7 +425,7 @@ describe("Folder Cover Generation Optimization", function()
         it("clearing the cache forces the next folder-cover render to query again", function()
             local query_calls = 0
             local original_query_cover_paths = ptutil.query_cover_paths
-            local original_getBookInfo = BookInfoManager.getBookInfo
+            local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
             local original_getSetting = BookInfoManager.getSetting
             local original_directory_exists = package.loaded["util"].directoryExists
             local original_file_exists = package.loaded["util"].fileExists
@@ -376,13 +443,17 @@ describe("Folder Cover Generation Optimization", function()
                     { "a.epub", "b.epub", "c.epub", "d.epub" },
                 }
             end
-            BookInfoManager.getBookInfo = function(self, filepath, get_cover)
-                return {
-                    cover_w = 100,
-                    cover_h = 150,
-                    cover_bb = { filepath = filepath },
-                    has_cover = "Y",
-                }
+            BookInfoManager.getBookInfoBatch = function(self, filepaths, get_cover)
+                local results = {}
+                for _, filepath in ipairs(filepaths) do
+                    results[filepath] = {
+                        cover_w = 100,
+                        cover_h = 150,
+                        cover_bb = { filepath = filepath },
+                        has_cover = "Y",
+                    }
+                end
+                return results
             end
             BookInfoManager.getSetting = function() return nil end
 
@@ -392,7 +463,7 @@ describe("Folder Cover Generation Optimization", function()
             ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
 
             ptutil.query_cover_paths = original_query_cover_paths
-            BookInfoManager.getBookInfo = original_getBookInfo
+            BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
             BookInfoManager.getSetting = original_getSetting
             package.loaded["util"].directoryExists = original_directory_exists
             package.loaded["util"].fileExists = original_file_exists
