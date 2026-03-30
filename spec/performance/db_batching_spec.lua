@@ -220,6 +220,31 @@ describe("Database Query Batching", function()
             assert.is_true(results["/nonexistent/book2.epub"]._batch_miss)
         end)
 
+        it("returns pseudo-bookinfo for unsupported files instead of batch misses", function()
+            local registry = package.loaded["document/documentregistry"]
+            local original_has_provider = registry.hasProvider
+            local filepath = "/pathchooser/note.txt"
+
+            registry.hasProvider = function(_, path)
+                return path ~= filepath
+            end
+            package.loaded["bookinfomanager"] = nil
+            BookInfoManager = require("bookinfomanager")
+
+            local results = BookInfoManager:getBookInfoBatch({ filepath }, false)
+
+            registry.hasProvider = original_has_provider
+            package.loaded["bookinfomanager"] = nil
+            BookInfoManager = require("bookinfomanager")
+
+            assert.is_table(results[filepath])
+            assert.is_nil(results[filepath]._batch_miss)
+            assert.equal("Y", results[filepath].cover_fetched)
+            assert.equal("Y", results[filepath].ignore_cover)
+            assert.equal("Y", results[filepath].ignore_meta)
+            assert.is_true(results[filepath]._no_provider)
+        end)
+
         it("properly escapes special characters in paths", function()
             local filepaths = {
                 "/books/book's name.epub",

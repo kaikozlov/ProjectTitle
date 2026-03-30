@@ -644,6 +644,26 @@ local function loadKoboMetadata(filepath, get_cover)
     return nil
 end
 
+local function buildUnsupportedBookInfo(filepath, directory, filename, is_directory)
+    if directory == nil or filename == nil then
+        local resolved_directory, resolved_filename = util.splitFilePathName(filepath)
+        directory = directory or resolved_directory
+        filename = filename or resolved_filename
+    end
+    return {
+        directory = directory,
+        filename = filename,
+        in_progress = 0,
+        cover_fetched = "Y",
+        has_meta = nil,
+        has_cover = nil,
+        ignore_meta = "Y",
+        ignore_cover = "Y",
+        _is_directory = is_directory,
+        _no_provider = not is_directory or nil,
+    }
+end
+
 -- Bookinfo management
 function BookInfoManager:getBookInfo(filepath, get_cover)
     -- load metadata from Kobo plugin
@@ -660,24 +680,7 @@ function BookInfoManager:getBookInfo(filepath, get_cover)
     -- to not trigger extraction, so we don't clutter DB with such files.
     local is_directory = lfs.attributes(filepath, "mode") == "directory"
     if is_directory or not DocumentRegistry:hasProvider(filepath) then
-        return {
-            directory = directory,
-            filename = filename,
-            --[[
-            filesize = lfs.attributes(filepath, "size"),
-            filemtime = lfs.attributes(filepath, "modification"),
-            --]]
-            in_progress = 0,
-            cover_fetched = "Y",
-            has_meta = nil,
-            has_cover = nil,
-            ignore_meta = "Y",
-            ignore_cover = "Y",
-            -- for CoverMenu to *not* extend the onHold dialog:
-            _is_directory = is_directory,
-            -- for ListMenu to show the filename *with* suffix:
-            _no_provider = true
-        }
+        return buildUnsupportedBookInfo(filepath, directory, filename, is_directory)
     end
 
     -- Check cover cache first when cover is requested
@@ -727,17 +730,21 @@ function BookInfoManager:getBookInfoBatch(filepaths, get_cover)
 
     -- Check cover cache first for any cached entries
     local uncached_paths = {}
-    if get_cover then
-        for _, filepath in ipairs(filepaths) do
+    for _, filepath in ipairs(filepaths) do
+        local directory, filename = util.splitFilePathName(filepath)
+        local is_directory = lfs.attributes(filepath, "mode") == "directory"
+        if is_directory or not DocumentRegistry:hasProvider(filepath) then
+            results[filepath] = buildUnsupportedBookInfo(filepath, directory, filename, is_directory)
+        elseif get_cover then
             local cached = self:getCachedCover(filepath)
             if cached then
                 results[filepath] = cached
             else
                 table.insert(uncached_paths, filepath)
             end
+        else
+            table.insert(uncached_paths, filepath)
         end
-    else
-        uncached_paths = filepaths
     end
 
     -- If all are cached, we're done

@@ -1120,6 +1120,9 @@ function ListMenuItem:update()
                 wmain
             })
         elseif is_pathchooser == true then -- pathchooser mode
+            if bookinfo and bookinfo._no_provider then
+                self.bookinfo_found = true
+            end
             local wright
             local wright_width = 0
             local wright_items = { align = "right" }

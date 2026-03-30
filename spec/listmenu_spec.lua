@@ -231,6 +231,53 @@ describe("ListMenu", function()
             assert.equal(0, single_lookup_count)
         end)
 
+        it("does not queue unsupported pathchooser files for background extraction when batch data marks them unsupported", function()
+            local render_context = mock_ui.default_render_context()
+            local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
+            local menu = {
+                width = 600,
+                screen_w = 600,
+                page = 1,
+                perpage = 5,
+                item_table = {
+                    { text = "note.txt", file = "/pathchooser/note.txt", path = "/pathchooser/note.txt", is_file = true },
+                },
+                item_group = {},
+                layout = {},
+                items_to_update = {},
+                itemnumber = 1,
+                getBookInfo = function()
+                    return { been_opened = false, status = "unread" }
+                end,
+                item_dimen = { copy = function() return { w = 100, h = 20 } end },
+                item_width = 100,
+                item_height = 20,
+                render_context = render_context,
+                _do_cover_images = false,
+                _do_filename_only = false,
+                _do_hint_opened = false,
+            }
+            render_context.is_pathchooser = true
+            for k, v in pairs(ListMenu) do menu[k] = v end
+
+            BookInfoManager.getBookInfoBatch = function()
+                return {
+                    ["/pathchooser/note.txt"] = {
+                        cover_fetched = "Y",
+                        ignore_cover = "Y",
+                        ignore_meta = "Y",
+                        _no_provider = true,
+                    },
+                }
+            end
+
+            menu:_updateItemsBuildUI()
+
+            BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
+
+            assert.equal(0, #menu.items_to_update)
+        end)
+
         it("clears the page batch after the initial build finishes", function()
             local render_context = mock_ui.default_render_context()
             local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch

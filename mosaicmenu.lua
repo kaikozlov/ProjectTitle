@@ -1066,6 +1066,9 @@ function MosaicMenuItem:update()
                 offset_y = 0,
             }
         else -- we're in pathchooser mode
+            if bookinfo and bookinfo._no_provider then
+                self.bookinfo_found = true
+            end
             local filesize = self.mandatory or ""
             widget = CenterContainer:new {
                 dimen = dimen,
