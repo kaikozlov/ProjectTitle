@@ -1325,11 +1325,29 @@ end
 -- Font size estimation cache
 -- Key format: "text_len|newlines|hash|width|height|min|max"
 local font_size_cache = {}
+local font_size_cache_count = 0
 local FONT_SIZE_CACHE_MAX = 200
 
 -- Clear the font size cache (e.g., on settings change or menu close)
 function ptutil.clearFontSizeCache()
     font_size_cache = {}
+    font_size_cache_count = 0
+end
+
+local function cacheFontSizeEstimate(cache_key, size)
+    if font_size_cache[cache_key] ~= nil then
+        font_size_cache[cache_key] = size
+        return size
+    end
+
+    if font_size_cache_count >= FONT_SIZE_CACHE_MAX then
+        font_size_cache = {}
+        font_size_cache_count = 0
+    end
+
+    font_size_cache[cache_key] = size
+    font_size_cache_count = font_size_cache_count + 1
+    return size
 end
 
 local function get_text_fingerprint(text)
@@ -1402,8 +1420,7 @@ function ptutil.estimateFontSize(params)
 
     -- Quick fit check - use max size if text is short enough
     if ptutil.isTextQuickFit(params) then
-        font_size_cache[cache_key] = max_size
-        return max_size
+        return cacheFontSizeEstimate(cache_key, max_size)
     end
 
     -- Heuristic estimation based on text area requirements
@@ -1442,16 +1459,7 @@ function ptutil.estimateFontSize(params)
     -- Clamp to min/max bounds
     estimated_size = math.max(min_size, math.min(max_size, math.floor(estimated_size)))
 
-    -- Cache the result (with size limit)
-    local cache_count = 0
-    for _ in pairs(font_size_cache) do cache_count = cache_count + 1 end
-    if cache_count >= FONT_SIZE_CACHE_MAX then
-        -- Simple eviction: clear cache when full
-        font_size_cache = {}
-    end
-    font_size_cache[cache_key] = estimated_size
-
-    return estimated_size
+    return cacheFontSizeEstimate(cache_key, estimated_size)
 end
 
 -- Widget Pool for reducing widget allocations in list/grid layout spacing.

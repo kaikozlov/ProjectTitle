@@ -14,6 +14,18 @@ describe("Font Sizing Optimization", function()
     local widget_counter
     local TextBoxWidget
 
+    local function get_upvalue_by_name(fn, name)
+        for index = 1, 20 do
+            local upvalue_name, upvalue_value = debug.getupvalue(fn, index)
+            if not upvalue_name then
+                break
+            end
+            if upvalue_name == name then
+                return upvalue_value
+            end
+        end
+    end
+
     setup(function()
         mock_ui()
     end)
@@ -170,6 +182,73 @@ describe("Font Sizing Optimization", function()
         it("provides clearFontSizeCache function", function()
             assert.is_function(ptutil.clearFontSizeCache,
                 "ptutil should have a clearFontSizeCache function")
+        end)
+
+        it("tracks distinct cached entries without recounting repeated hits", function()
+            ptutil.estimateFontSize({
+                text = "Cached Title",
+                width = 200,
+                height = 100,
+                min_size = 10,
+                max_size = 26,
+            })
+            ptutil.estimateFontSize({
+                text = "Cached Title",
+                width = 200,
+                height = 100,
+                min_size = 10,
+                max_size = 26,
+            })
+            ptutil.estimateFontSize({
+                text = "Another Title",
+                width = 200,
+                height = 100,
+                min_size = 10,
+                max_size = 26,
+            })
+
+            local cache_count = get_upvalue_by_name(ptutil.clearFontSizeCache, "font_size_cache_count")
+            assert.is_not_nil(cache_count)
+            assert.equal(2, cache_count)
+        end)
+
+        it("resets cache bookkeeping when cleared", function()
+            ptutil.estimateFontSize({
+                text = "Cached Title",
+                width = 200,
+                height = 100,
+                min_size = 10,
+                max_size = 26,
+            })
+            ptutil.estimateFontSize({
+                text = "Another Title",
+                width = 200,
+                height = 100,
+                min_size = 10,
+                max_size = 26,
+            })
+
+            ptutil.clearFontSizeCache()
+
+            local cache_count = get_upvalue_by_name(ptutil.clearFontSizeCache, "font_size_cache_count")
+            assert.is_not_nil(cache_count)
+            assert.equal(0, cache_count)
+        end)
+
+        it("resets bookkeeping to the new entry after the cache reaches capacity", function()
+            for index = 1, 201 do
+                ptutil.estimateFontSize({
+                    text = "Title " .. index,
+                    width = 200,
+                    height = 100,
+                    min_size = 10,
+                    max_size = 26,
+                })
+            end
+
+            local cache_count = get_upvalue_by_name(ptutil.clearFontSizeCache, "font_size_cache_count")
+            assert.is_not_nil(cache_count)
+            assert.equal(1, cache_count)
         end)
     end)
 
