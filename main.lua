@@ -1100,45 +1100,20 @@ function ProjectTitle.getUpdateItemTableFunc(display_mode)
         if not booklist_menu._projecttitle_overridden then
             booklist_menu._projecttitle_overridden = true
 
-            -- In both mosaic and list modes, replace original methods with those from
-            -- our generic CoverMenu
             local CoverMenu = require("covermenu")
-            CoverMenu.prepareMenuInit(booklist_menu)
-            booklist_menu.updateItems = CoverMenu.updateItems
-            booklist_menu.onCloseWidget = CoverMenu.onCloseWidget
-            booklist_menu.updatePageInfo = CoverMenu.updatePageInfo
-
             ProjectTitle.initGrid(booklist_menu, display_mode)
-            if booklist_menu.display_mode_type == "mosaic" then
-                -- Replace some other original methods with those from our MosaicMenu
-                local MosaicMenu = require("mosaicmenu")
-                booklist_menu._recalculateDimen = MosaicMenu._recalculateDimen
-                booklist_menu._updateItemsBuildUI = MosaicMenu._updateItemsBuildUI
-                -- Set MosaicMenu behaviour:
-                booklist_menu._do_cover_images = display_mode ~= "mosaic_text"
-                booklist_menu._do_center_partial_rows = false -- nicer looking when few elements
-            elseif booklist_menu.display_mode_type == "list" then
-                -- Replace some other original methods with those from our ListMenu
-                local ListMenu = require("listmenu")
-                booklist_menu._recalculateDimen = ListMenu._recalculateDimen
-                booklist_menu._updateItemsBuildUI = ListMenu._updateItemsBuildUI
-                -- Set ListMenu behaviour:
-                if (display_mode == "list_only_meta") or (display_mode == "list_no_meta") then
-                    booklist_menu._do_cover_images = false
-                else
-                    booklist_menu._do_cover_images = true
-                end
-                -- booklist_menu._do_cover_images = display_mode ~= "list_only_meta"
-                booklist_menu._do_filename_only = display_mode == "list_no_meta"
-            end
-
+            local do_hint_opened
             if widget_id == "history" then
-                booklist_menu._do_hint_opened = BookInfoManager:getSetting("history_hint_opened")
+                do_hint_opened = BookInfoManager:getSetting("history_hint_opened")
             elseif widget_id == "collections" then
-                booklist_menu._do_hint_opened = BookInfoManager:getSetting("collections_hint_opened")
+                do_hint_opened = BookInfoManager:getSetting("collections_hint_opened")
             else -- "filesearcher"
-                booklist_menu._do_hint_opened = true
+                do_hint_opened = true
             end
+            CoverMenu.configureDisplayMenu(booklist_menu, display_mode, {
+                prepare_menu = true,
+                do_hint_opened = do_hint_opened,
+            })
         end
 
         -- And do now what the original does

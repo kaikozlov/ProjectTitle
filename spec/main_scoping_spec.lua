@@ -167,6 +167,42 @@ describe("Main Menu Scoping", function()
         assert.equal(CoverMenu.genItemTable, file_chooser.genItemTable)
     end)
 
+    it("uses shared menu wiring for owned and hijacked menu instances", function()
+        assert.is_function(CoverMenu.configureDisplayMenu)
+
+        local update_item_table = CoverBrowser.getUpdateItemTableFunc("list_no_meta")
+        local file_chooser = {
+            updateItems = function() end,
+            onCloseWidget = function() end,
+            genItemTable = function() end,
+            _recalculateDimen = function() end,
+            switchItemTable = function() end,
+        }
+        local widget = {
+            booklist_menu = {
+                name = "history",
+            },
+        }
+
+        CoverBrowser.ui = {
+            file_chooser = file_chooser,
+        }
+        CoverBrowser.refreshFileManagerInstance = function() end
+
+        CoverBrowser:setupFileManagerDisplayMode("list_no_meta")
+        update_item_table(widget)
+
+        assert.equal(file_chooser.display_mode_type, widget.booklist_menu.display_mode_type)
+        assert.equal(file_chooser.updateItems, widget.booklist_menu.updateItems)
+        assert.equal(file_chooser.onCloseWidget, widget.booklist_menu.onCloseWidget)
+        assert.equal(file_chooser.updatePageInfo, widget.booklist_menu.updatePageInfo)
+        assert.equal(file_chooser._recalculateDimen, widget.booklist_menu._recalculateDimen)
+        assert.equal(file_chooser._updateItemsBuildUI, widget.booklist_menu._updateItemsBuildUI)
+        assert.equal(file_chooser._do_cover_images, widget.booklist_menu._do_cover_images)
+        assert.equal(file_chooser._do_filename_only, widget.booklist_menu._do_filename_only)
+        assert.equal(file_chooser._do_hint_opened, widget.booklist_menu._do_hint_opened)
+    end)
+
     it("patches updatePageInfo only on the owned widget instance", function()
         local Menu = package.loaded["ui/widget/menu"]
         local original_update_page_info = Menu.updatePageInfo

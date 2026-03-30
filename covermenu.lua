@@ -76,49 +76,68 @@ end
 local CoverMenu = {}
 local _FileChooser_init_orig = FileChooser.init
 
-function CoverMenu.configureFileChooser(file_chooser, display_mode)
-    if not file_chooser then
+function CoverMenu.configureDisplayMenu(menu, display_mode, opts)
+    if not menu then
         return
     end
+    opts = opts or {}
+    local include_gen_item_table = opts.include_gen_item_table
+    local do_hint_opened = opts.do_hint_opened
+    local prepare_menu = opts.prepare_menu
 
-    file_chooser.display_mode_type = display_mode and display_mode:gsub("_.*", "") or nil
+    menu.display_mode_type = display_mode and display_mode:gsub("_.*", "") or nil
 
     if not display_mode then
-        file_chooser.updateItems = CoverMenu._FileChooser_updateItems_orig
-        file_chooser.onCloseWidget = CoverMenu._FileChooser_onCloseWidget_orig
-        file_chooser._recalculateDimen = CoverMenu._FileChooser__recalculateDimen_orig
-        file_chooser.genItemTable = CoverMenu._FileChooser_genItemTable_orig
-        file_chooser.updatePageInfo = CoverMenu._Menu_updatePageInfo_orig
-        file_chooser._updateItemsBuildUI = nil
-        file_chooser._do_cover_images = nil
-        file_chooser._do_filename_only = nil
-        file_chooser._do_hint_opened = nil
-        file_chooser._do_center_partial_rows = nil
+        menu.updateItems = CoverMenu._FileChooser_updateItems_orig
+        menu.onCloseWidget = CoverMenu._FileChooser_onCloseWidget_orig
+        menu._recalculateDimen = CoverMenu._FileChooser__recalculateDimen_orig
+        if include_gen_item_table then
+            menu.genItemTable = CoverMenu._FileChooser_genItemTable_orig
+        end
+        menu.updatePageInfo = CoverMenu._Menu_updatePageInfo_orig
+        menu._updateItemsBuildUI = nil
+        menu._do_cover_images = nil
+        menu._do_filename_only = nil
+        menu._do_hint_opened = nil
+        menu._do_center_partial_rows = nil
         return
     end
 
-    file_chooser.updateItems = CoverMenu.updateItems
-    file_chooser.onCloseWidget = CoverMenu.onCloseWidget
-    file_chooser.genItemTable = CoverMenu.genItemTable
-    file_chooser.updatePageInfo = CoverMenu.updatePageInfo
-
-    if file_chooser.display_mode_type == "mosaic" then
-        local MosaicMenu = require("mosaicmenu")
-        file_chooser._recalculateDimen = MosaicMenu._recalculateDimen
-        file_chooser._updateItemsBuildUI = MosaicMenu._updateItemsBuildUI
-        file_chooser._do_cover_images = display_mode ~= "mosaic_text"
-        file_chooser._do_hint_opened = true
-        file_chooser._do_center_partial_rows = false
-        file_chooser._do_filename_only = nil
-    elseif file_chooser.display_mode_type == "list" then
-        local ListMenu = require("listmenu")
-        file_chooser._recalculateDimen = ListMenu._recalculateDimen
-        file_chooser._updateItemsBuildUI = ListMenu._updateItemsBuildUI
-        file_chooser._do_cover_images = display_mode ~= "list_only_meta" and display_mode ~= "list_no_meta"
-        file_chooser._do_filename_only = display_mode == "list_no_meta"
-        file_chooser._do_hint_opened = true
-        file_chooser._do_center_partial_rows = nil
+    if prepare_menu then
+        CoverMenu.prepareMenuInit(menu)
     end
+
+    menu.updateItems = CoverMenu.updateItems
+    menu.onCloseWidget = CoverMenu.onCloseWidget
+    if include_gen_item_table then
+        menu.genItemTable = CoverMenu.genItemTable
+    end
+    menu.updatePageInfo = CoverMenu.updatePageInfo
+
+    if menu.display_mode_type == "mosaic" then
+        local MosaicMenu = require("mosaicmenu")
+        menu._recalculateDimen = MosaicMenu._recalculateDimen
+        menu._updateItemsBuildUI = MosaicMenu._updateItemsBuildUI
+        menu._do_cover_images = display_mode ~= "mosaic_text"
+        menu._do_hint_opened = do_hint_opened ~= nil and do_hint_opened or true
+        menu._do_center_partial_rows = false
+        menu._do_filename_only = nil
+    elseif menu.display_mode_type == "list" then
+        local ListMenu = require("listmenu")
+        menu._recalculateDimen = ListMenu._recalculateDimen
+        menu._updateItemsBuildUI = ListMenu._updateItemsBuildUI
+        menu._do_cover_images = display_mode ~= "list_only_meta" and display_mode ~= "list_no_meta"
+        menu._do_filename_only = display_mode == "list_no_meta"
+        menu._do_hint_opened = do_hint_opened ~= nil and do_hint_opened or true
+        menu._do_center_partial_rows = nil
+    end
+end
+
+function CoverMenu.configureFileChooser(file_chooser, display_mode)
+    CoverMenu.configureDisplayMenu(file_chooser, display_mode, {
+        include_gen_item_table = true,
+        do_hint_opened = display_mode and true or nil,
+    })
 end
 
 -- Build a render context containing all settings needed for rendering

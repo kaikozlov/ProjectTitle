@@ -19,6 +19,12 @@ describe("CoverMenu", function()
             s = function(val) return val end
         }
 
+        package.loaded["l10n.gettext"] = setmetatable({
+            pgettext = function(_, text) return text end,
+        }, {
+            __call = function(_, text) return text end,
+        })
+
         -- Mock FileChooser
         FileChooser = {
             init = function(self)
@@ -122,19 +128,26 @@ describe("CoverMenu", function()
                     status = "unread",
                     percent_finished = 0
                 }
-            end
+            end,
+            hasBookBeenOpened = function()
+                return false
+            end,
         }
 
         -- Mock DocumentRegistry
         package.loaded["document/documentregistry"] = {
-            hasProvider = function(filename)
+            hasProvider = function(_, filename)
                 return filename:match("%.epub$") or filename:match("%.pdf$")
             end
         }
 
         -- Mock other dependencies
         package.loaded["apps/filemanager/filemanagerbookinfo"] = {}
-        package.loaded["apps/filemanager/filemanagerconverter"] = {}
+        package.loaded["apps/filemanager/filemanagerconverter"] = {
+            isSupported = function()
+                return false
+            end,
+        }
         package.loaded["apps/filemanager/filemanagershortcuts"] = {}
         package.loaded["apps/filemanager/filemanagermenu"] = {
             new = function(self, o) return o or {} end
@@ -162,6 +175,10 @@ describe("CoverMenu", function()
             isTrue = function(self, key) return false end,
             isFalse = function(self, key) return false end
         }
+
+        package.loaded["device"].canExecuteScript = function()
+            return false
+        end
 
         CoverMenu = require("covermenu")
 
@@ -674,6 +691,72 @@ describe("CoverMenu", function()
             assert.is_not_nil(open_args)
             assert.equal(menu, open_args.file_manager)
             assert.equal("/test/book.epub", open_args.path)
+        end)
+
+        it("routes standard file dialog actions through file manager callbacks", function()
+            local shown_dialog
+            local renamed
+            local deleted
+            local cut
+            local copied
+            local pasted
+            package.loaded["ui/uimanager"].show = function(_, widget)
+                shown_dialog = widget
+            end
+            package.loaded["ui/uimanager"].close = function() end
+            package.loaded["ui/widget/buttondialog"].new = function(self, o) return o end
+            package.loaded["apps/filemanager/filemanagerutil"].genBookInformationButton = function()
+                return { text = "Book information" }
+            end
+
+            local menu = {
+                show_parent = {},
+                root_path = "/test",
+                registerKeyEvents = function() end,
+                file_chooser = { path = "/test" },
+                clipboard = true,
+                showRenameFileDialog = function(_, file, is_file)
+                    renamed = { file = file, is_file = is_file }
+                end,
+                showDeleteFileDialog = function(_, file)
+                    deleted = file
+                end,
+                cutFile = function(_, file)
+                    cut = file
+                end,
+                copyFile = function(_, file)
+                    copied = file
+                end,
+                pasteFileFromClipboard = function(_, file)
+                    pasted = file
+                end,
+                collections = {
+                    genAddToCollectionButton = function()
+                        return { text = "Collection" }
+                    end,
+                },
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+            menu.file_chooser:showFileDialog({
+                path = "/test/book.txt",
+                is_file = true,
+            })
+
+            assert.is_table(shown_dialog)
+            local buttons = shown_dialog.buttons
+            buttons[1][1].callback()
+            buttons[1][3].callback()
+            buttons[2][1].callback()
+            buttons[2][2].callback()
+            buttons[2][3].callback()
+
+            assert.equal("/test/book.txt", pasted)
+            assert.same({ file = "/test/book.txt", is_file = true }, renamed)
+            assert.equal("/test/book.txt", deleted)
+            assert.equal("/test/book.txt", cut)
+            assert.equal("/test/book.txt", copied)
         end)
     end)
 
