@@ -757,8 +757,11 @@ function MosaicMenuItem:update()
 
         -- Check for pre-fetched bookinfo from batch query first
         local bookinfo = nil
-        if self.menu._bookinfo_batch and self.menu._bookinfo_batch[self.filepath] then
+        if self.menu._bookinfo_batch and self.menu._bookinfo_batch[self.filepath] ~= nil then
             bookinfo = self.menu._bookinfo_batch[self.filepath]
+            if BookInfoManager:isBatchMiss(bookinfo) then
+                bookinfo = nil
+            end
         else
             -- Fallback to individual query if not in batch
             bookinfo = BookInfoManager:getBookInfo(self.filepath, self.do_cover_image)
@@ -1723,6 +1726,7 @@ function MosaicMenu:_updateItemsBuildUI()
         end
         itm_timer:report("Draw grid item " .. getMenuText(entry))
     end
+    self._bookinfo_batch = nil
     if self.meta_show_opened == nil then
         table.insert(self.item_group, ptutil.acquirePooledWidget(self, "VerticalSpan",
             { width = Screen:scaleBySize(half_margin_size) }))

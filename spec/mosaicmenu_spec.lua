@@ -7,8 +7,46 @@ describe("MosaicMenu", function()
     
     setup(function()
         setup_mocks()
-        MosaicMenu = require("mosaicmenu")
+        package.loaded["bookinfomanager"] = nil
+        package.loaded["mosaicmenu"] = nil
+        package.loaded["document/documentregistry"] = {
+            hasProvider = function() return true end,
+            getProvider = function() return {} end,
+            openDocument = function() return nil end,
+        }
+        package.loaded["apps/filemanager/filemanagerbookinfo"] = {
+            extendProps = function(props) return props or {} end,
+            getCoverImage = function() return nil end,
+        }
+        package.loaded["ui/widget/infomessage"] = {
+            new = function(self, o) return o end,
+        }
+        package.loaded["ui/renderimage"] = {
+            scaleBlitBuffer = function(bb) return bb end,
+        }
+        package.loaded["ui/uimanager"] = {
+            show = function() end,
+            close = function() end,
+            scheduleIn = function() end,
+        }
+        package.loaded["ffi/zstd"] = {
+            zstd_uncompress_ctx = function() return nil, 0 end,
+            zstd_compress = function() return nil, 0 end,
+        }
+        package.loaded["ui/time"] = {
+            now = function() return 0 end,
+            s = function(n) return n end,
+        }
+        package.loaded["device"].canUseWAL = function() return false end
+        package.loaded["device"].isAndroid = function() return false end
+        package.loaded["device"].enableCPUCores = function() end
+        _G.G_reader_settings = {
+            readSetting = function() return nil end,
+            isTrue = function() return false end,
+            nilOrTrue = function() return false end,
+        }
         BookInfoManager = require("bookinfomanager")
+        MosaicMenu = require("mosaicmenu")
     end)
     
     describe("MosaicMenu Logic", function()
@@ -43,8 +81,8 @@ describe("MosaicMenu", function()
                 nb_cols = 3,
                 item_margin = 10,
                 item_table = {
-                    { text = "Book 1", file = "/books/book1.epub" },
-                    { text = "Book 2", file = "/books/book2.epub" },
+                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub", is_file = true },
+                    { text = "Book 2", file = "/books/book2.epub", path = "/books/book2.epub", is_file = true },
                     { text = "Folder 1", path = "/books/folder1" }
                 },
                 item_group = {},
@@ -92,7 +130,7 @@ describe("MosaicMenu", function()
                 nb_cols = 3,
                 item_margin = 10,
                 item_table = {
-                    { text = "Book 1", file = "/books/book1.epub" },
+                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub", is_file = true },
                 },
                 item_group = {},
                 layout = {},
@@ -128,6 +166,55 @@ describe("MosaicMenu", function()
             BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
 
             assert.is_nil(menu.cover_info_cache)
+        end)
+
+        it("does not fall back to single-item book info lookups for batch misses during initial build", function()
+            local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
+            local original_getBookInfo = BookInfoManager.getBookInfo
+            local single_lookup_count = 0
+            local menu = {
+                width = 600,
+                screen_w = 600,
+                page = 1,
+                perpage = 6,
+                nb_cols = 3,
+                item_margin = 10,
+                item_table = {
+                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub", is_file = true },
+                },
+                item_group = {},
+                layout = {},
+                items_to_update = {},
+                itemnumber = 1,
+                getBookInfo = function()
+                    return { been_opened = false, status = "unread" }
+                end,
+                item_dimen = { copy = function() return { w = 100, h = 100 } end },
+                inner_dimen = { w = 600, h = 800 },
+                item_width = 100,
+                item_height = 100,
+                render_context = setup_mocks.default_render_context(),
+            }
+            for k, v in pairs(MosaicMenu) do menu[k] = v end
+
+            BookInfoManager.getBookInfoBatch = function(self, filepaths, do_cover)
+                return {
+                    ["/books/book1.epub"] = {
+                        _batch_miss = true,
+                    },
+                }
+            end
+            BookInfoManager.getBookInfo = function()
+                single_lookup_count = single_lookup_count + 1
+                return nil
+            end
+
+            menu:_updateItemsBuildUI()
+
+            BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
+            BookInfoManager.getBookInfo = original_getBookInfo
+
+            assert.equal(0, single_lookup_count)
         end)
     end)
 end)

@@ -200,8 +200,21 @@ describe("Database Query Batching", function()
             local results = BookInfoManager:getBookInfoBatch(filepaths, false)
 
             assert.is_table(results)
-            -- Missing entries should be nil
-            assert.is_nil(results["/nonexistent/book1.epub"])
+            assert.is_true(results["/nonexistent/book1.epub"]._batch_miss)
+        end)
+
+        it("records explicit miss entries for queried filepaths with no row", function()
+            local filepaths = {
+                "/nonexistent/book1.epub",
+                "/nonexistent/book2.epub",
+            }
+
+            local results = BookInfoManager:getBookInfoBatch(filepaths, false)
+
+            assert.is_table(results["/nonexistent/book1.epub"])
+            assert.is_true(results["/nonexistent/book1.epub"]._batch_miss)
+            assert.is_table(results["/nonexistent/book2.epub"])
+            assert.is_true(results["/nonexistent/book2.epub"]._batch_miss)
         end)
 
         it("properly escapes special characters in paths", function()

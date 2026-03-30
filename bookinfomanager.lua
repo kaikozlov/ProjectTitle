@@ -149,6 +149,9 @@ local UNSUPPORTED_REASONS = {
 local BookInfoManager = {}
 
 BookInfoManager.max_cover_dimen = 600 -- tested 400, 600, and 800
+BookInfoManager.BATCH_MISS = {
+    _batch_miss = true,
+}
 
 function BookInfoManager:init()
     self.db_location = DataStorage:getSettingsDir() .. "/PT_bookinfo_cache.sqlite3"
@@ -360,6 +363,10 @@ function BookInfoManager:deleteDb()
     stmt:step()              -- commited
     stmt:clearbind():reset() -- cleanup
     self:clearCoverCache()
+end
+
+function BookInfoManager:isBatchMiss(bookinfo)
+    return bookinfo ~= nil and bookinfo._batch_miss == true
 end
 
 function BookInfoManager:compactDb()
@@ -660,6 +667,12 @@ function BookInfoManager:getBookInfoBatch(filepaths, get_cover)
     stmt:clearbind():reset()
     if stmt.finalize then
         stmt:finalize()
+    end
+
+    for _, filepath in ipairs(uncached_paths) do
+        if results[filepath] == nil then
+            results[filepath] = BookInfoManager.BATCH_MISS
+        end
     end
 
     return results

@@ -264,6 +264,9 @@ local function setup_mocks()
     local mock_bookinfo_settings = {}
     package.loaded["bookinfomanager"] = {
         _settings = mock_bookinfo_settings,
+        BATCH_MISS = {
+            _batch_miss = true,
+        },
         getBookInfo = function() return nil end,
         getSetting = function(_, key)
             return mock_bookinfo_settings[key]
@@ -289,6 +292,9 @@ local function setup_mocks()
         -- Cover cache methods
         getCachedCover = function() return nil end,
         isCoverCached = function() return false end,
+        isBatchMiss = function(_, bookinfo)
+            return bookinfo ~= nil and bookinfo._batch_miss == true
+        end,
         cacheCover = function() end,
         clearCoverCache = function() end,
         invalidateCachedCover = function() end

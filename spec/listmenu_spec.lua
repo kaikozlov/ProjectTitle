@@ -6,10 +6,48 @@ describe("ListMenu", function()
     local ListMenuItem
     local BookInfoManager
     
-    setup(function()
-        mock_ui()
-        
-        -- Load the module under test
+	    setup(function()
+	        mock_ui()
+            package.loaded["bookinfomanager"] = nil
+            package.loaded["listmenu"] = nil
+            package.loaded["document/documentregistry"] = {
+                hasProvider = function() return true end,
+                getProvider = function() return {} end,
+                openDocument = function() return nil end,
+            }
+            package.loaded["apps/filemanager/filemanagerbookinfo"] = {
+                extendProps = function(props) return props or {} end,
+                getCoverImage = function() return nil end,
+            }
+            package.loaded["ui/widget/infomessage"] = {
+                new = function(self, o) return o end,
+            }
+            package.loaded["ui/renderimage"] = {
+                scaleBlitBuffer = function(bb) return bb end,
+            }
+            package.loaded["ui/uimanager"] = {
+                show = function() end,
+                close = function() end,
+                scheduleIn = function() end,
+            }
+            package.loaded["ffi/zstd"] = {
+                zstd_uncompress_ctx = function() return nil, 0 end,
+                zstd_compress = function() return nil, 0 end,
+            }
+            package.loaded["ui/time"] = {
+                now = function() return 0 end,
+                s = function(n) return n end,
+            }
+            package.loaded["device"].canUseWAL = function() return false end
+            package.loaded["device"].isAndroid = function() return false end
+            package.loaded["device"].enableCPUCores = function() end
+            _G.G_reader_settings = {
+                readSetting = function() return nil end,
+                isTrue = function() return false end,
+                nilOrTrue = function() return false end,
+            }
+	        
+	        -- Load the module under test
         -- We need to capture the return value which is ListMenu
         -- But ListMenuItem is local to the file, so we can't access it directly unless we expose it
         -- or test it through ListMenu.
@@ -22,9 +60,9 @@ describe("ListMenu", function()
         -- Or I can use `debug.getupvalue` to get ListMenuItem from ListMenu methods if possible.
         -- ListMenu._updateItemsBuildUI uses ListMenuItem.
         
-        ListMenu = require("listmenu")
-        BookInfoManager = require("bookinfomanager")
-    end)
+	        BookInfoManager = require("bookinfomanager")
+	        ListMenu = require("listmenu")
+	    end)
     
     describe("ListMenu Logic", function()
         it("recalculates dimensions correctly in portrait", function()
@@ -56,8 +94,8 @@ describe("ListMenu", function()
                 page = 1,
                 perpage = 5,
                 item_table = {
-                    { text = "Book 1", file = "/books/book1.epub" },
-                    { text = "Book 2", file = "/books/book2.epub" },
+                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub", is_file = true },
+                    { text = "Book 2", file = "/books/book2.epub", path = "/books/book2.epub", is_file = true },
                     { text = "Folder 1", path = "/books/folder1" } -- directory
                 },
                 item_group = {},
@@ -109,7 +147,7 @@ describe("ListMenu", function()
                 page = 1,
                 perpage = 5,
                 item_table = {
-                    { text = "Book 1", file = "/books/book1.epub" },
+                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub", is_file = true },
                 },
                 item_group = {},
                 layout = {},
@@ -144,6 +182,93 @@ describe("ListMenu", function()
             BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
 
             assert.is_nil(menu.cover_info_cache)
+        end)
+
+        it("does not fall back to single-item book info lookups for batch misses during initial build", function()
+            local render_context = mock_ui.default_render_context()
+            local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
+            local original_getBookInfo = BookInfoManager.getBookInfo
+            local single_lookup_count = 0
+            local menu = {
+                width = 600,
+                screen_w = 600,
+                page = 1,
+                perpage = 5,
+                item_table = {
+                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub", is_file = true },
+                },
+                item_group = {},
+                layout = {},
+                items_to_update = {},
+                itemnumber = 1,
+                getBookInfo = function()
+                    return { been_opened = false, status = "unread" }
+                end,
+                item_dimen = { copy = function() return { w = 100, h = 20 } end },
+                item_width = 100,
+                item_height = 20,
+                render_context = render_context,
+            }
+            for k, v in pairs(ListMenu) do menu[k] = v end
+
+            BookInfoManager.getBookInfoBatch = function(self, filepaths, do_cover)
+                return {
+                    ["/books/book1.epub"] = {
+                        _batch_miss = true,
+                    },
+                }
+            end
+            BookInfoManager.getBookInfo = function()
+                single_lookup_count = single_lookup_count + 1
+                return nil
+            end
+
+            menu:_updateItemsBuildUI()
+
+            BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
+            BookInfoManager.getBookInfo = original_getBookInfo
+
+            assert.equal(0, single_lookup_count)
+        end)
+
+        it("clears the page batch after the initial build finishes", function()
+            local render_context = mock_ui.default_render_context()
+            local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
+            local menu = {
+                width = 600,
+                screen_w = 600,
+                page = 1,
+                perpage = 5,
+                item_table = {
+                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub", is_file = true },
+                },
+                item_group = {},
+                layout = {},
+                items_to_update = {},
+                itemnumber = 1,
+                getBookInfo = function()
+                    return { been_opened = false, status = "unread" }
+                end,
+                item_dimen = { copy = function() return { w = 100, h = 20 } end },
+                item_width = 100,
+                item_height = 20,
+                render_context = render_context,
+            }
+            for k, v in pairs(ListMenu) do menu[k] = v end
+
+            BookInfoManager.getBookInfoBatch = function(self, filepaths, do_cover)
+                return {
+                    ["/books/book1.epub"] = {
+                        _batch_miss = true,
+                    },
+                }
+            end
+
+            menu:_updateItemsBuildUI()
+
+            BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
+
+            assert.is_nil(menu._bookinfo_batch)
         end)
     end)
 end)
