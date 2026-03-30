@@ -312,5 +312,133 @@ describe("ListMenu", function()
 
             assert.are.same({ "/books/book1.epub" }, seen_filepaths)
         end)
+
+        it("skips page batch prefetch in filename-only mode", function()
+            local render_context = mock_ui.default_render_context()
+            local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
+            local batch_calls = 0
+            local menu = {
+                width = 600,
+                screen_w = 600,
+                page = 1,
+                perpage = 5,
+                item_table = {
+                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub", is_file = true },
+                },
+                item_group = {},
+                layout = {},
+                items_to_update = {},
+                itemnumber = 1,
+                getBookInfo = function()
+                    return { been_opened = false, status = "unread" }
+                end,
+                item_dimen = { copy = function() return { w = 100, h = 20 } end },
+                item_width = 100,
+                item_height = 20,
+                render_context = render_context,
+                _do_cover_images = false,
+                _do_filename_only = true,
+            }
+            for k, v in pairs(ListMenu) do menu[k] = v end
+
+            BookInfoManager.getBookInfoBatch = function(self, filepaths, do_cover)
+                batch_calls = batch_calls + 1
+                return {}
+            end
+
+            menu:_updateItemsBuildUI()
+
+            BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
+
+            assert.equal(0, batch_calls)
+        end)
+
+        it("skips single-book plugin lookups in filename-only mode", function()
+            local render_context = mock_ui.default_render_context()
+            local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
+            local original_getBookInfo = BookInfoManager.getBookInfo
+            local single_lookup_count = 0
+            local menu = {
+                width = 600,
+                screen_w = 600,
+                page = 1,
+                perpage = 5,
+                item_table = {
+                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub", is_file = true },
+                },
+                item_group = {},
+                layout = {},
+                items_to_update = {},
+                itemnumber = 1,
+                getBookInfo = function()
+                    return { been_opened = false, status = "unread" }
+                end,
+                item_dimen = { copy = function() return { w = 100, h = 20 } end },
+                item_width = 100,
+                item_height = 20,
+                render_context = render_context,
+                _do_cover_images = false,
+                _do_filename_only = true,
+            }
+            for k, v in pairs(ListMenu) do menu[k] = v end
+
+            BookInfoManager.getBookInfoBatch = function()
+                error("filename-only mode should not batch plugin book info")
+            end
+            BookInfoManager.getBookInfo = function()
+                single_lookup_count = single_lookup_count + 1
+                return nil
+            end
+
+            menu:_updateItemsBuildUI()
+
+            BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
+            BookInfoManager.getBookInfo = original_getBookInfo
+
+            assert.equal(0, single_lookup_count)
+        end)
+
+        it("does not queue filename-only items for background extraction", function()
+            local render_context = mock_ui.default_render_context()
+            local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
+            local original_getBookInfo = BookInfoManager.getBookInfo
+            local menu = {
+                width = 600,
+                screen_w = 600,
+                page = 1,
+                perpage = 5,
+                item_table = {
+                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub", is_file = true },
+                },
+                item_group = {},
+                layout = {},
+                items_to_update = {},
+                itemnumber = 1,
+                getBookInfo = function()
+                    return { been_opened = false, status = "unread" }
+                end,
+                item_dimen = { copy = function() return { w = 100, h = 20 } end },
+                item_width = 100,
+                item_height = 20,
+                render_context = render_context,
+                _do_cover_images = false,
+                _do_filename_only = true,
+            }
+            for k, v in pairs(ListMenu) do menu[k] = v end
+
+            BookInfoManager.getBookInfoBatch = function()
+                error("filename-only mode should not batch plugin book info")
+            end
+            BookInfoManager.getBookInfo = function()
+                return nil
+            end
+
+            menu:_updateItemsBuildUI()
+
+            BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
+            BookInfoManager.getBookInfo = original_getBookInfo
+
+            assert.same({}, menu.items_to_update)
+        end)
     end)
 end)

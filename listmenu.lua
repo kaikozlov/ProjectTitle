@@ -312,7 +312,14 @@ function ListMenuItem:update()
 
         -- Check for pre-fetched bookinfo from batch query first
         local bookinfo = nil
-        if self.menu._bookinfo_batch and self.menu._bookinfo_batch[self.filepath] ~= nil then
+        if self.do_filename_only then
+            -- Filename-only mode should not touch the plugin bookinfo cache at all.
+            bookinfo = {
+                cover_fetched = true,
+                ignore_cover = "Y",
+                ignore_meta = "Y",
+            }
+        elseif self.menu._bookinfo_batch and self.menu._bookinfo_batch[self.filepath] ~= nil then
             bookinfo = self.menu._bookinfo_batch[self.filepath]
             if BookInfoManager:isBatchMiss(bookinfo) then
                 bookinfo = nil
@@ -1432,18 +1439,20 @@ function ListMenu:_updateItemsBuildUI()
 
     -- Batch pre-fetch bookinfo for all items on this page to reduce DB queries
     local filepaths = {}
-    for idx = 1, self.perpage do
-        local index = idx_offset + idx
-        local entry = self.item_table[index]
-        if entry and entry.path and entry.is_file and not entry.is_go_up then
-            table.insert(filepaths, entry.path)
+    if not self._do_filename_only then
+        for idx = 1, self.perpage do
+            local index = idx_offset + idx
+            local entry = self.item_table[index]
+            if entry and entry.path and entry.is_file and not entry.is_go_up then
+                table.insert(filepaths, entry.path)
+            end
         end
     end
     local bookinfo_batch = {}
-    if #filepaths > 0 then
+    if not self._do_filename_only and #filepaths > 0 then
         bookinfo_batch = BookInfoManager:getBookInfoBatch(filepaths, self._do_cover_images) or {}
     end
-    self._bookinfo_batch = bookinfo_batch  -- Store for items to access
+    self._bookinfo_batch = self._do_filename_only and nil or bookinfo_batch -- Store for items to access
 
     for idx = 1, self.perpage do
         local itm_timer = ptdbg:new()
