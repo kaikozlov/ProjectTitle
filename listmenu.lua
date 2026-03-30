@@ -1461,7 +1461,8 @@ function ListMenu:_updateItemsBuildUI()
         if idx > 1 then
             -- add focus indicator padding only for devices that need it
             if not self.render_context.is_touch_device or self.render_context.force_focus_indicator then
-                table.insert(self.item_group, VerticalSpan:new { width = Screen:scaleBySize(3) })
+                table.insert(self.item_group, ptutil.acquirePooledWidget(self, "VerticalSpan",
+                    { width = Screen:scaleBySize(3) }))
             end
             is_boundary_crossed = (index - 1 >= self.recent_boundary_index + 1)
             if is_boundary_crossed then
@@ -1494,7 +1495,8 @@ function ListMenu:_updateItemsBuildUI()
         itm_timer:report("Draw list item " .. getMenuText(entry))
     end
     list_timer:report("Draw cover list page " .. self.perpage)
-    table.insert(self.item_group, VerticalSpan:new { width = Screen:scaleBySize(3) }) -- bottom padding
+    table.insert(self.item_group, ptutil.acquirePooledWidget(self, "VerticalSpan",
+        { width = Screen:scaleBySize(3) })) -- bottom padding
     return select_number
 end
 

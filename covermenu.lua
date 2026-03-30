@@ -114,6 +114,7 @@ function CoverMenu:updateItems(select_number, no_recalculate_dimen)
     -- self.layout must be updated for focusmanager
     self.layout = {}
     self.item_group:clear()
+    ptutil.releasePooledWidgets(self)
     -- NOTE: Our various _recalculateDimen overloads appear to have a stronger dependency
     --       on the rest of the widget elements being properly laid-out,
     --       so we have to run it *first*, unlike in Menu.
@@ -284,6 +285,10 @@ function CoverMenu:onCloseWidget()
 
     -- Propagate a call to free() to all our sub-widgets, to release memory used by their _bb
     self.item_group:free()
+    ptutil.releasePooledWidgets(self)
+    if self.widget_pool then
+        self.widget_pool:clear()
+    end
 
     -- Clean any short term cache (used by ListMenu to cache some Doc Settings info)
     self.cover_info_cache = nil

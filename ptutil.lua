@@ -38,9 +38,10 @@ local BookInfoManager = require("bookinfomanager")
 
 local ptutil = {}
 
--- Folder cover widget cache
--- Caches generated folder cover widgets by folder path and dimensions
--- This avoids repeated database queries and widget tree construction
+-- Folder cover data cache
+-- Caches reusable folder cover inputs by folder path and dimensions.
+-- We intentionally cache data, not widget instances, because widgets are
+-- parent-owned and unsafe to reuse across render trees.
 -- Cache key format: "filepath|max_w|max_h"
 local folder_cover_cache = {}
 local FOLDER_COVER_CACHE_SIZE = 50  -- Max cached folder covers
@@ -80,6 +81,21 @@ local function cache_folder_cover(filepath, max_w, max_h, widget)
     end
     local key = get_folder_cache_key(filepath, max_w, max_h)
     folder_cover_cache[key] = widget
+end
+
+local function clone_folder_cover_entries(entries)
+    if not entries then
+        return nil
+    end
+    local clone = {}
+    for i, entry in ipairs(entries) do
+        clone[i] = {
+            cover_bb = entry.cover_bb,
+            cover_w = entry.cover_w,
+            cover_h = entry.cover_h,
+        }
+    end
+    return clone
 end
 
 ptutil.list_defaults = {
@@ -503,42 +519,58 @@ function ptutil.get_thumbnail_size(max_w, max_h)
     return max_img_w, max_img_h
 end
 
-function ptutil.build_cover_images(db_res, max_w, max_h)
-    local covers = {}
+local function collect_cover_entries(db_res)
+    local entries = {}
     if db_res then
         local directories = db_res[1]
         local filenames = db_res[2]
-        local max_img_w, max_img_h = ptutil.get_thumbnail_size(max_w, max_h)
         for i, filename in ipairs(filenames) do
             local fullpath = directories[i] .. filename
             if util.fileExists(fullpath) then
                 local bookinfo = BookInfoManager:getBookInfo(fullpath, true)
                 if bookinfo and bookinfo.cover_bb then
-                    local border_total = (Size.border.thin * 2)
-                    local _, _, scale_factor = BookInfoManager.getCachedCoverSize(
-                        bookinfo.cover_w, bookinfo.cover_h, max_img_w, max_img_h)
-                    local wimage = ImageWidget:new {
-                        image = bookinfo.cover_bb,
-                        image_disposable = false, -- Don't free cached cover_bb
-                        scale_factor = scale_factor,
-                    }
-                    table.insert(covers, FrameContainer:new {
-                        width = math.floor((bookinfo.cover_w * scale_factor) + border_total),
-                        height = math.floor((bookinfo.cover_h * scale_factor) + border_total),
-                        margin = 0,
-                        padding = 0,
-                        radius = Size.radius.default,
-                        bordersize = Size.border.thin,
-                        color = Blitbuffer.COLOR_GRAY_3,
-                        background = Blitbuffer.COLOR_GRAY_3,
-                        wimage,
+                    table.insert(entries, {
+                        cover_bb = bookinfo.cover_bb,
+                        cover_w = bookinfo.cover_w,
+                        cover_h = bookinfo.cover_h,
                     })
                 end
-                if #covers == 4 then break end
+                if #entries == 4 then break end
             end
         end
     end
+    return entries
+end
+
+local function build_cover_widgets(entries, max_w, max_h)
+    local covers = {}
+    local max_img_w, max_img_h = ptutil.get_thumbnail_size(max_w, max_h)
+    for _, entry in ipairs(entries or {}) do
+        local border_total = (Size.border.thin * 2)
+        local _, _, scale_factor = BookInfoManager.getCachedCoverSize(
+            entry.cover_w, entry.cover_h, max_img_w, max_img_h)
+        local wimage = ImageWidget:new {
+            image = entry.cover_bb,
+            image_disposable = false, -- Don't free cached cover_bb
+            scale_factor = scale_factor,
+        }
+        table.insert(covers, FrameContainer:new {
+            width = math.floor((entry.cover_w * scale_factor) + border_total),
+            height = math.floor((entry.cover_h * scale_factor) + border_total),
+            margin = 0,
+            padding = 0,
+            radius = Size.radius.default,
+            bordersize = Size.border.thin,
+            color = Blitbuffer.COLOR_GRAY_3,
+            background = Blitbuffer.COLOR_GRAY_3,
+            wimage,
+        })
+    end
     return covers
+end
+
+function ptutil.build_cover_images(db_res, max_w, max_h)
+    return build_cover_widgets(collect_cover_entries(db_res), max_w, max_h)
 end
 
 -- Helper to create a blank frame-style cover with background
@@ -651,18 +683,26 @@ function ptutil.getSubfolderCoverImages(filepath, max_w, max_h)
     -- Return nil early if filepath is nil
     if not filepath then return nil end
 
-    -- NOTE: We intentionally don't use the folder cover widget cache here.
-    -- Widgets are owned by their parent widget and get freed when the parent
-    -- is freed. Caching and reusing widgets across different parents causes
-    -- use-after-free crashes when swiping between pages.
+    local cached_entries = get_cached_folder_cover(filepath, max_w, max_h)
+    local cover_entries = clone_folder_cover_entries(cached_entries)
 
-    local db_res = ptutil.query_cover_paths(filepath, false)
-    local images = ptutil.build_cover_images(db_res, max_w, max_h)
+    if not cover_entries then
+        local db_res = ptutil.query_cover_paths(filepath, false)
+        cover_entries = collect_cover_entries(db_res)
 
-    if #images < 4 then
-        db_res = ptutil.query_cover_paths(filepath, true)
-        images = ptutil.build_cover_images(db_res, max_w, max_h)
+        if #cover_entries < 4 then
+            db_res = ptutil.query_cover_paths(filepath, true)
+            cover_entries = collect_cover_entries(db_res)
+        end
+
+        if #cover_entries == 0 then
+            return nil
+        end
+
+        cache_folder_cover(filepath, max_w, max_h, clone_folder_cover_entries(cover_entries))
     end
+
+    local images = build_cover_widgets(cover_entries, max_w, max_h)
 
     -- Return nil if no images found
     if #images == 0 then return nil end
@@ -1298,6 +1338,20 @@ local function get_widget_constructors()
     return widget_constructors
 end
 
+local function construct_widget(widget_type, init_params)
+    local constructors = get_widget_constructors()
+    local constructor = constructors[widget_type]
+    if constructor then
+        local widget = constructor:new(init_params or {})
+        widget._pool_type = widget_type
+        return widget
+    end
+
+    local widget = init_params or {}
+    widget._pool_type = widget_type
+    return widget
+end
+
 -- Create a new widget pool
 -- @param opts Table with options: max_per_type (default 20)
 function WidgetPool:new(opts)
@@ -1330,16 +1384,7 @@ function WidgetPool:acquire(widget_type, init_params)
     end
 
     -- Create a new widget
-    local constructors = get_widget_constructors()
-    local constructor = constructors[widget_type]
-    if constructor then
-        return constructor:new(init_params or {})
-    end
-
-    -- Fallback: create a simple table if widget type not found
-    local widget = init_params or {}
-    widget._pool_type = widget_type
-    return widget
+    return construct_widget(widget_type, init_params)
 end
 
 -- Release a widget back to the pool for reuse
@@ -1388,6 +1433,26 @@ end
 
 -- Export WidgetPool
 ptutil.WidgetPool = WidgetPool
+
+function ptutil.acquirePooledWidget(menu, widget_type, init_params)
+    if menu and menu.widget_pool then
+        local widget = menu.widget_pool:acquire(widget_type, init_params)
+        menu._pooled_widgets_in_use = menu._pooled_widgets_in_use or {}
+        table.insert(menu._pooled_widgets_in_use, widget)
+        return widget
+    end
+    return construct_widget(widget_type, init_params)
+end
+
+function ptutil.releasePooledWidgets(menu)
+    if not menu or not menu.widget_pool or not menu._pooled_widgets_in_use then
+        return
+    end
+    for _, widget in ipairs(menu._pooled_widgets_in_use) do
+        menu.widget_pool:release(widget)
+    end
+    menu._pooled_widgets_in_use = {}
+end
 
 -- O(1) LRU Cache Implementation
 -- Uses a doubly-linked list + hash map for O(1) get, put, and eviction

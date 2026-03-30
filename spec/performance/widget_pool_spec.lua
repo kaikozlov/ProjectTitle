@@ -10,6 +10,9 @@ local mock_ui = require("spec.support.mock_ui")
 
 describe("Widget Pool Optimization", function()
     local ptutil
+    local ListMenu
+    local MosaicMenu
+    local BookInfoManager
 
     setup(function()
         mock_ui()
@@ -18,6 +21,11 @@ describe("Widget Pool Optimization", function()
     before_each(function()
         package.loaded["ptutil"] = nil
         ptutil = require("ptutil")
+        package.loaded["listmenu"] = nil
+        package.loaded["mosaicmenu"] = nil
+        ListMenu = require("listmenu")
+        MosaicMenu = require("mosaicmenu")
+        BookInfoManager = require("bookinfomanager")
     end)
 
     describe("WidgetPool class", function()
@@ -127,6 +135,111 @@ describe("Widget Pool Optimization", function()
             -- The pool should have collected some widgets
             local pooled = pool:getPoolSize("HorizontalSpan")
             assert.is_true(pooled > 0, "Pool should collect released widgets")
+        end)
+
+        it("list page builds acquire pooled widgets in production path", function()
+            local acquire_count = 0
+            local pool = ptutil.WidgetPool:new()
+            local original_acquire = pool.acquire
+            pool.acquire = function(self, widget_type, init_params)
+                acquire_count = acquire_count + 1
+                return original_acquire(self, widget_type, init_params)
+            end
+
+            BookInfoManager.getBookInfoBatch = function(self, filepaths, do_cover)
+                local results = {}
+                for _, filepath in ipairs(filepaths) do
+                    results[filepath] = {
+                        has_cover = false,
+                        cover_fetched = true,
+                        title = "Test Book",
+                        authors = "Test Author",
+                    }
+                end
+                return results
+            end
+
+            local menu = {
+                width = 600,
+                screen_w = 600,
+                page = 1,
+                perpage = 5,
+                item_table = {
+                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub" },
+                    { text = "Book 2", file = "/books/book2.epub", path = "/books/book2.epub" },
+                },
+                item_group = {},
+                layout = {},
+                items_to_update = {},
+                itemnumber = 1,
+                getBookInfo = function() return { been_opened = false, status = "unread" } end,
+                item_dimen = { copy = function() return { w = 100, h = 20 } end },
+                item_width = 100,
+                item_height = 20,
+                render_context = mock_ui.default_render_context(),
+                widget_pool = pool,
+                _pooled_widgets_in_use = {},
+                _do_cover_images = false,
+            }
+            for k, v in pairs(ListMenu) do menu[k] = v end
+
+            menu:_updateItemsBuildUI()
+
+            assert.is_true(acquire_count > 0, "ListMenu should acquire pooled widgets during page build")
+        end)
+
+        it("mosaic page builds acquire pooled widgets in production path", function()
+            local acquire_count = 0
+            local pool = ptutil.WidgetPool:new()
+            local original_acquire = pool.acquire
+            pool.acquire = function(self, widget_type, init_params)
+                acquire_count = acquire_count + 1
+                return original_acquire(self, widget_type, init_params)
+            end
+
+            BookInfoManager.getBookInfoBatch = function(self, filepaths, do_cover)
+                local results = {}
+                for _, filepath in ipairs(filepaths) do
+                    results[filepath] = {
+                        has_cover = false,
+                        cover_fetched = true,
+                        title = "Test Book",
+                        authors = "Test Author",
+                    }
+                end
+                return results
+            end
+
+            local menu = {
+                width = 600,
+                screen_w = 600,
+                page = 1,
+                perpage = 6,
+                nb_cols = 3,
+                item_margin = 10,
+                item_table = {
+                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub" },
+                    { text = "Book 2", file = "/books/book2.epub", path = "/books/book2.epub" },
+                },
+                item_group = {},
+                layout = {},
+                items_to_update = {},
+                itemnumber = 1,
+                getBookInfo = function() return { been_opened = false, status = "unread" } end,
+                item_dimen = { copy = function() return { w = 100, h = 100 } end },
+                inner_dimen = { w = 600, h = 800 },
+                item_width = 100,
+                item_height = 100,
+                render_context = mock_ui.default_render_context(),
+                widget_pool = pool,
+                _pooled_widgets_in_use = {},
+                _do_cover_images = false,
+            }
+            for k, v in pairs(MosaicMenu) do menu[k] = v end
+
+            menu:_updateItemsBuildUI()
+
+            assert.is_true(acquire_count > 0, "MosaicMenu should acquire pooled widgets during page build")
         end)
     end)
 end)

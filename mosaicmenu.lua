@@ -1616,7 +1616,8 @@ function MosaicMenu:_updateItemsBuildUI()
     local line_width = self.width or self.screen_w
     local half_margin_size = margin_size / 2
     table.insert(self.item_group, ptutil.mediumBlackLine(line_width))
-    table.insert(self.item_group, VerticalSpan:new { width = Screen:scaleBySize(half_margin_size) })
+    table.insert(self.item_group, ptutil.acquirePooledWidget(self, "VerticalSpan",
+        { width = Screen:scaleBySize(half_margin_size) }))
     local cur_row = nil
     local idx_offset = (self.page - 1) * self.perpage
     local items_on_current_page = math.min(self.perpage, math.max(0, #self.item_table - idx_offset))
@@ -1662,7 +1663,7 @@ function MosaicMenu:_updateItemsBuildUI()
                 },
                 cur_row
             })
-            table.insert(cur_row, HorizontalSpan:new({ width = self.item_margin }))
+            table.insert(cur_row, ptutil.acquirePooledWidget(self, "HorizontalSpan", { width = self.item_margin }))
         end
         local item_tmp = MosaicMenuItem:new {
             height = self.item_height,
@@ -1677,7 +1678,7 @@ function MosaicMenu:_updateItemsBuildUI()
             do_hint_opened = self._do_hint_opened,
         }
         table.insert(cur_row, item_tmp)
-        table.insert(cur_row, HorizontalSpan:new({ width = self.item_margin }))
+        table.insert(cur_row, ptutil.acquirePooledWidget(self, "HorizontalSpan", { width = self.item_margin }))
 
         -- Recent items that are sorted to top of the library are underlined in black (using the row separator line)
         -- If the current row ends before the boundary → full black line. If boundary falls within the current
@@ -1689,7 +1690,8 @@ function MosaicMenu:_updateItemsBuildUI()
             local is_last_row = (row_end == last_index)
             local draw_line = ((not is_last_row) or (is_last_row and self.meta_show_opened ~= nil))
             if draw_line then
-                table.insert(self.item_group, VerticalSpan:new { width = Screen:scaleBySize(half_margin_size) })
+                table.insert(self.item_group, ptutil.acquirePooledWidget(self, "VerticalSpan",
+                    { width = Screen:scaleBySize(half_margin_size) }))
             end
             local baseline = is_last_row and ptutil.thinWhiteLine or ptutil.thinGrayLine
             if self.recent_boundary_index > 0 then
@@ -1716,7 +1718,8 @@ function MosaicMenu:_updateItemsBuildUI()
                 if draw_line then table.insert(self.item_group, baseline(line_width)) end
             end
             if draw_line then
-                table.insert(self.item_group, VerticalSpan:new { width = Screen:scaleBySize(half_margin_size) })
+                table.insert(self.item_group, ptutil.acquirePooledWidget(self, "VerticalSpan",
+                    { width = Screen:scaleBySize(half_margin_size) }))
             end
         end
         -- this is for focus manager
@@ -1728,7 +1731,8 @@ function MosaicMenu:_updateItemsBuildUI()
         itm_timer:report("Draw grid item " .. getMenuText(entry))
     end
     if self.meta_show_opened == nil then
-        table.insert(self.item_group, VerticalSpan:new { width = Screen:scaleBySize(half_margin_size) })
+        table.insert(self.item_group, ptutil.acquirePooledWidget(self, "VerticalSpan",
+            { width = Screen:scaleBySize(half_margin_size) }))
     end
     table.insert(self.layout, line_layout)
     grid_timer:report("Draw cover grid page " .. self.perpage)

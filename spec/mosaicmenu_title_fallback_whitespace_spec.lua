@@ -62,7 +62,18 @@ describe("MosaicMenu Title Fallback Whitespace", function()
             -- Font fallback function (for Issue #146 fix)
             getFontFace = function(font_name, size)
                 return { size = size, name = font_name }
-            end
+            end,
+            acquirePooledWidget = function(menu, widget_type, init_params)
+                local constructors = {
+                    HorizontalSpan = package.loaded["ui/widget/horizontalspan"],
+                    VerticalSpan = package.loaded["ui/widget/verticalspan"],
+                }
+                local constructor = constructors[widget_type]
+                if constructor then
+                    return constructor:new(init_params or {})
+                end
+                return init_params or {}
+            end,
         }
         package.loaded["ptutil"] = ptutilMock
         

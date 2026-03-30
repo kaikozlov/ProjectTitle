@@ -95,6 +95,57 @@ describe("Folder Cover Generation Optimization", function()
                 ptutil.clearFolderCoverCache()
             end)
         end)
+
+        it("reuses cached folder-cover data on repeated renders", function()
+            local query_calls = 0
+            local original_query_cover_paths = ptutil.query_cover_paths
+            local original_getBookInfo = BookInfoManager.getBookInfo
+            local original_getSetting = BookInfoManager.getSetting
+            local original_directory_exists = package.loaded["util"].directoryExists
+            local original_file_exists = package.loaded["util"].fileExists
+
+            package.loaded["util"].directoryExists = function(path)
+                return path == "/books/folder"
+            end
+            package.loaded["util"].fileExists = function(path)
+                return path:match("^/books/folder/")
+            end
+            ptutil.query_cover_paths = function(folder, include_subfolders)
+                query_calls = query_calls + 1
+                return {
+                    { "/books/folder/", "/books/folder/", "/books/folder/", "/books/folder/" },
+                    { "a.epub", "b.epub", "c.epub", "d.epub" },
+                }
+            end
+            BookInfoManager.getBookInfo = function(self, filepath, get_cover)
+                return {
+                    cover_w = 100,
+                    cover_h = 150,
+                    cover_bb = { filepath = filepath },
+                    has_cover = "Y",
+                }
+            end
+            BookInfoManager.getSetting = function(self, key)
+                if key == "use_stacked_foldercovers" then
+                    return nil
+                end
+                return nil
+            end
+
+            ptutil.clearFolderCoverCache()
+            local first = ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
+            local second = ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
+
+            ptutil.query_cover_paths = original_query_cover_paths
+            BookInfoManager.getBookInfo = original_getBookInfo
+            BookInfoManager.getSetting = original_getSetting
+            package.loaded["util"].directoryExists = original_directory_exists
+            package.loaded["util"].fileExists = original_file_exists
+
+            assert.is_not_nil(first)
+            assert.is_not_nil(second)
+            assert.equal(1, query_calls)
+        end)
     end)
 
     describe("Database connection reuse", function()
