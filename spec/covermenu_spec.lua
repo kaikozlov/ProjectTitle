@@ -611,6 +611,43 @@ describe("CoverMenu", function()
             assert.same({ "filechooser_layout" }, menu.layout)
         end)
 
+        it("preserves upstream FileChooser wiring for ui and custom title bar", function()
+            local menu = {
+                show_parent = {},
+                root_path = "/test",
+                registerKeyEvents = function() end,
+                file_chooser = { path = "/test" }
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+
+            assert.equal(menu, menu.file_chooser.ui)
+            assert.equal(menu.title_bar, menu.file_chooser.custom_title_bar)
+            assert.is_true(menu.file_chooser.return_arrow_propagation)
+        end)
+
+        it("routes FileChooser search callback through the file searcher", function()
+            local searched_for
+            local menu = {
+                show_parent = {},
+                root_path = "/test",
+                filesearcher = {
+                    onShowFileSearch = function(self, search_string)
+                        searched_for = search_string
+                    end,
+                },
+                registerKeyEvents = function() end,
+                file_chooser = { path = "/test" }
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+            menu.file_chooser.search_callback("needle")
+
+            assert.equal("needle", searched_for)
+        end)
+
         it("routes file opens through filemanagerutil.openFile", function()
             local open_args
             package.loaded["apps/filemanager/filemanagerutil"].openFile = function(file_manager, path)
