@@ -216,6 +216,13 @@ local function buildBookInfoFromRow(row, get_cover)
     return bookinfo
 end
 
+local function clearFolderCoverCache()
+    local ok, ptutil = pcall(require, "ptutil")
+    if ok and ptutil.clearFolderCoverCache then
+        ptutil.clearFolderCoverCache()
+    end
+end
+
 -- Cover Cache Management using O(1) LRU cache
 -- Returns cached bookinfo with cover if available, nil otherwise
 function BookInfoManager:getCachedCover(filepath)
@@ -250,6 +257,7 @@ end
 function BookInfoManager:clearCoverCache()
     local cache = get_cover_cache()
     cache:clear()
+    clearFolderCoverCache()
 end
 
 -- Removes a specific entry from the cover cache
@@ -257,6 +265,7 @@ end
 function BookInfoManager:invalidateCachedCover(filepath)
     local cache = get_cover_cache()
     cache:invalidate(filepath)
+    clearFolderCoverCache()
 end
 
 -- DB management
@@ -738,6 +747,7 @@ function BookInfoManager:extractBookInfo(filepath, cover_specs)
     self.set_stmt:step()              -- commited
     self.set_stmt:clearbind():reset() -- get ready for next query
     if tried_enough then
+        self:invalidateCachedCover(filepath)
         return                        -- Last insert done for this book, we're giving up
     end
 
@@ -896,6 +906,7 @@ function BookInfoManager:extractBookInfo(filepath, cover_specs)
     end
     self.set_stmt:step()
     self.set_stmt:clearbind():reset() -- get ready for next query
+    self:invalidateCachedCover(filepath)
     timer:report("Cache book " .. filepath)
     return loaded
 end

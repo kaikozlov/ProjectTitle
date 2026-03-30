@@ -39,9 +39,10 @@ local BookInfoManager = require("bookinfomanager")
 local ptutil = {}
 
 -- Folder cover data cache
--- Caches reusable folder cover inputs by folder path and dimensions.
--- We intentionally cache data, not widget instances, because widgets are
--- parent-owned and unsafe to reuse across render trees.
+-- Caches lightweight source filepaths by folder path and dimensions.
+-- We intentionally do not cache widget instances or live cover blitbuffers:
+-- widgets are parent-owned, and hydrated cover data should come from the
+-- current BookInfoManager state on each render.
 -- Cache key format: "filepath|max_w|max_h"
 local folder_cover_cache = {}
 local FOLDER_COVER_CACHE_SIZE = 50  -- Max cached folder covers
@@ -83,17 +84,13 @@ local function cache_folder_cover(filepath, max_w, max_h, widget)
     folder_cover_cache[key] = widget
 end
 
-local function clone_folder_cover_entries(entries)
-    if not entries then
+local function clone_folder_cover_paths(filepaths)
+    if not filepaths then
         return nil
     end
     local clone = {}
-    for i, entry in ipairs(entries) do
-        clone[i] = {
-            cover_bb = entry.cover_bb,
-            cover_w = entry.cover_w,
-            cover_h = entry.cover_h,
-        }
+    for i, filepath in ipairs(filepaths) do
+        clone[i] = filepath
     end
     return clone
 end
@@ -552,25 +549,34 @@ function ptutil.get_thumbnail_size(max_w, max_h)
     return max_img_w, max_img_h
 end
 
-local function collect_cover_entries(db_res)
-    local entries = {}
+local function collect_cover_filepaths(db_res)
+    local filepaths = {}
     if db_res then
         local directories = db_res[1]
         local filenames = db_res[2]
         for i, filename in ipairs(filenames) do
             local fullpath = directories[i] .. filename
             if util.fileExists(fullpath) then
-                local bookinfo = BookInfoManager:getBookInfo(fullpath, true)
-                if bookinfo and bookinfo.cover_bb then
-                    table.insert(entries, {
-                        cover_bb = bookinfo.cover_bb,
-                        cover_w = bookinfo.cover_w,
-                        cover_h = bookinfo.cover_h,
-                    })
-                end
-                if #entries == 4 then break end
+                table.insert(filepaths, fullpath)
+                if #filepaths == 4 then break end
             end
         end
+    end
+    return filepaths
+end
+
+local function hydrate_cover_entries(filepaths)
+    local entries = {}
+    for _, filepath in ipairs(filepaths or {}) do
+        local bookinfo = BookInfoManager:getBookInfo(filepath, true)
+        if bookinfo and bookinfo.cover_bb then
+            table.insert(entries, {
+                cover_bb = bookinfo.cover_bb,
+                cover_w = bookinfo.cover_w,
+                cover_h = bookinfo.cover_h,
+            })
+        end
+        if #entries == 4 then break end
     end
     return entries
 end
@@ -603,7 +609,7 @@ local function build_cover_widgets(entries, max_w, max_h)
 end
 
 function ptutil.build_cover_images(db_res, max_w, max_h)
-    return build_cover_widgets(collect_cover_entries(db_res), max_w, max_h)
+    return build_cover_widgets(hydrate_cover_entries(collect_cover_filepaths(db_res)), max_w, max_h)
 end
 
 -- Helper to create a blank frame-style cover with background
@@ -716,25 +722,26 @@ function ptutil.getSubfolderCoverImages(filepath, max_w, max_h)
     -- Return nil early if filepath is nil
     if not filepath then return nil end
 
-    local cached_entries = get_cached_folder_cover(filepath, max_w, max_h)
-    local cover_entries = clone_folder_cover_entries(cached_entries)
+    local cached_filepaths = get_cached_folder_cover(filepath, max_w, max_h)
+    local cover_filepaths = clone_folder_cover_paths(cached_filepaths)
 
-    if not cover_entries then
+    if not cover_filepaths then
         local db_res = ptutil.query_cover_paths(filepath, false)
-        cover_entries = collect_cover_entries(db_res)
+        cover_filepaths = collect_cover_filepaths(db_res)
 
-        if #cover_entries < 4 then
+        if #cover_filepaths < 4 then
             db_res = ptutil.query_cover_paths(filepath, true)
-            cover_entries = collect_cover_entries(db_res)
+            cover_filepaths = collect_cover_filepaths(db_res)
         end
 
-        if #cover_entries == 0 then
+        if #cover_filepaths == 0 then
             return nil
         end
 
-        cache_folder_cover(filepath, max_w, max_h, clone_folder_cover_entries(cover_entries))
+        cache_folder_cover(filepath, max_w, max_h, clone_folder_cover_paths(cover_filepaths))
     end
 
+    local cover_entries = hydrate_cover_entries(cover_filepaths)
     local images = build_cover_widgets(cover_entries, max_w, max_h)
 
     -- Return nil if no images found

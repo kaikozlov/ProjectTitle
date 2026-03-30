@@ -4,6 +4,7 @@ describe("BookInfoManager", function()
     local BookInfoManager
     local queries = {}
     local mock_conn
+    local folder_cache_clear_count = 0
 
     setup(function()
         -- Mock dependencies
@@ -96,11 +97,18 @@ describe("BookInfoManager", function()
                         invalidate = function(_, key) store[key] = nil end,
                     }
                 end
-            }
+            },
+            clearFolderCoverCache = function()
+                folder_cache_clear_count = folder_cache_clear_count + 1
+            end,
         }
 
         -- Now require the module
         BookInfoManager = require("bookinfomanager")
+    end)
+
+    before_each(function()
+        folder_cache_clear_count = 0
     end)
 
     it("initializes and creates the table with correct schema", function()
@@ -297,6 +305,18 @@ describe("BookInfoManager", function()
             BookInfoManager.clearCoverCache = original_clear
 
             assert.equal(1, cleared)
+        end)
+
+        it("clears folder-cover cache when invalidating one cached cover", function()
+            BookInfoManager:invalidateCachedCover("/books/update.epub")
+
+            assert.equal(1, folder_cache_clear_count)
+        end)
+
+        it("clears folder-cover cache when clearing all cached covers", function()
+            BookInfoManager:clearCoverCache()
+
+            assert.equal(1, folder_cache_clear_count)
         end)
     end)
 end)

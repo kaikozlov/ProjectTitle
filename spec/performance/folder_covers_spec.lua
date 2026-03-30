@@ -146,6 +146,98 @@ describe("Folder Cover Generation Optimization", function()
             assert.is_not_nil(second)
             assert.equal(1, query_calls)
         end)
+
+        it("rehydrates cached folder-cover selections from current book info on every render", function()
+            local query_calls = 0
+            local get_bookinfo_calls = 0
+            local original_query_cover_paths = ptutil.query_cover_paths
+            local original_getBookInfo = BookInfoManager.getBookInfo
+            local original_getSetting = BookInfoManager.getSetting
+            local original_directory_exists = package.loaded["util"].directoryExists
+            local original_file_exists = package.loaded["util"].fileExists
+
+            package.loaded["util"].directoryExists = function(path)
+                return path == "/books/folder"
+            end
+            package.loaded["util"].fileExists = function(path)
+                return path:match("^/books/folder/")
+            end
+            ptutil.query_cover_paths = function(folder, include_subfolders)
+                query_calls = query_calls + 1
+                return {
+                    { "/books/folder/", "/books/folder/", "/books/folder/", "/books/folder/" },
+                    { "a.epub", "b.epub", "c.epub", "d.epub" },
+                }
+            end
+            BookInfoManager.getBookInfo = function(self, filepath, get_cover)
+                get_bookinfo_calls = get_bookinfo_calls + 1
+                return {
+                    cover_w = 100,
+                    cover_h = 150,
+                    cover_bb = { filepath = filepath, call = get_bookinfo_calls },
+                    has_cover = "Y",
+                }
+            end
+            BookInfoManager.getSetting = function() return nil end
+
+            ptutil.clearFolderCoverCache()
+            ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
+            ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
+
+            ptutil.query_cover_paths = original_query_cover_paths
+            BookInfoManager.getBookInfo = original_getBookInfo
+            BookInfoManager.getSetting = original_getSetting
+            package.loaded["util"].directoryExists = original_directory_exists
+            package.loaded["util"].fileExists = original_file_exists
+
+            assert.equal(1, query_calls)
+            assert.equal(8, get_bookinfo_calls)
+        end)
+
+        it("invalidates cached folder-cover selections after book-info updates", function()
+            local query_calls = 0
+            local original_query_cover_paths = ptutil.query_cover_paths
+            local original_getBookInfo = BookInfoManager.getBookInfo
+            local original_getSetting = BookInfoManager.getSetting
+            local original_directory_exists = package.loaded["util"].directoryExists
+            local original_file_exists = package.loaded["util"].fileExists
+
+            package.loaded["util"].directoryExists = function(path)
+                return path == "/books/folder"
+            end
+            package.loaded["util"].fileExists = function(path)
+                return path:match("^/books/folder/")
+            end
+            ptutil.query_cover_paths = function(folder, include_subfolders)
+                query_calls = query_calls + 1
+                return {
+                    { "/books/folder/", "/books/folder/", "/books/folder/", "/books/folder/" },
+                    { "a.epub", "b.epub", "c.epub", "d.epub" },
+                }
+            end
+            BookInfoManager.getBookInfo = function(self, filepath, get_cover)
+                return {
+                    cover_w = 100,
+                    cover_h = 150,
+                    cover_bb = { filepath = filepath },
+                    has_cover = "Y",
+                }
+            end
+            BookInfoManager.getSetting = function() return nil end
+
+            ptutil.clearFolderCoverCache()
+            ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
+            BookInfoManager:setBookInfoProperties("/books/folder/a.epub", { ignore_cover = "Y" })
+            ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
+
+            ptutil.query_cover_paths = original_query_cover_paths
+            BookInfoManager.getBookInfo = original_getBookInfo
+            BookInfoManager.getSetting = original_getSetting
+            package.loaded["util"].directoryExists = original_directory_exists
+            package.loaded["util"].fileExists = original_file_exists
+
+            assert.equal(2, query_calls)
+        end)
     end)
 
     describe("Query construction", function()
