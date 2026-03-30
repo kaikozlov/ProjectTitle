@@ -147,6 +147,26 @@ describe("Font Sizing Optimization", function()
             assert.equal(size1, size2)
         end)
 
+        it("does not reuse cached estimates for same-length text with different newline counts", function()
+            local single_line = ptutil.estimateFontSize({
+                text = "abcdefghi",
+                width = 90,
+                height = 40,
+                min_size = 10,
+                max_size = 26,
+            })
+
+            local multiline = ptutil.estimateFontSize({
+                text = "abcd\nefgh",
+                width = 90,
+                height = 40,
+                min_size = 10,
+                max_size = 26,
+            })
+
+            assert.not_equal(single_line, multiline)
+        end)
+
         it("provides clearFontSizeCache function", function()
             assert.is_function(ptutil.clearFontSizeCache,
                 "ptutil should have a clearFontSizeCache function")

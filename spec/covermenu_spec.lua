@@ -670,6 +670,26 @@ describe("CoverMenu", function()
 
             assert.equal(1, call_count)
         end)
+        it("clears the font-size estimator cache on close", function()
+            local ptutil = require("ptutil")
+            local cleared = 0
+            local original_clear = ptutil.clearFontSizeCache
+            ptutil.clearFontSizeCache = function()
+                cleared = cleared + 1
+            end
+
+            local menu = {
+                item_group = { free = function() end },
+                _covermenu_onclose_done = false
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:onCloseWidget()
+
+            ptutil.clearFontSizeCache = original_clear
+
+            assert.equal(1, cleared)
+        end)
     end)
 
     describe("scheduled refresh batching", function()

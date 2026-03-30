@@ -371,6 +371,7 @@ function CoverMenu:onCloseWidget()
 
     -- Clear folder cover widget cache
     ptutil.clearFolderCoverCache()
+    ptutil.clearFontSizeCache()
 
     -- Force garbage collecting when leaving too
     -- (delay it a bit so this pause is less noticable)

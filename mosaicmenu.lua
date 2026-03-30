@@ -1503,11 +1503,7 @@ function MosaicMenu:_recalculateDimen()
 
     -- Create or replace corner_mark only when dimensions change
     local mark_image_size = 21
-    if self.show_progress_bar then
-        mark_image_size = mark_image_size - (Size.border.thin * 2) - Size.padding.small
-    else
-        mark_image_size = mark_image_size - Size.padding.tiny
-    end
+    mark_image_size = mark_image_size - Size.padding.tiny
     corner_mark_size = Screen:scaleBySize(mark_image_size)
 
     -- Only rebuild corner marks when dimensions have changed

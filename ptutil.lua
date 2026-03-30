@@ -1326,13 +1326,26 @@ function ptutil.getMetaSummary(fullpath, swap)
 end
 
 -- Font size estimation cache
--- Key format: "text_len|width|height|min|max"
+-- Key format: "text_len|newlines|hash|width|height|min|max"
 local font_size_cache = {}
 local FONT_SIZE_CACHE_MAX = 200
 
 -- Clear the font size cache (e.g., on settings change or menu close)
 function ptutil.clearFontSizeCache()
     font_size_cache = {}
+end
+
+local function get_text_fingerprint(text)
+    local newline_count = 0
+    local hash = 2166136261
+    for i = 1, #text do
+        local byte = text:byte(i)
+        if byte == 10 then
+            newline_count = newline_count + 1
+        end
+        hash = (hash ~ byte) * 16777619 % 4294967296
+    end
+    return newline_count, hash
 end
 
 -- Quick-fit detection: determine if text will definitely fit at max size
@@ -1376,8 +1389,16 @@ function ptutil.estimateFontSize(params)
 
     -- Check cache first
     local text_len = #text
+    local newline_count, text_hash = get_text_fingerprint(text)
     -- Use math.floor to ensure all values are integers for the cache key
-    local cache_key = string.format("%d|%d|%d|%d|%d", text_len, math.floor(width), math.floor(height), math.floor(min_size), math.floor(max_size))
+    local cache_key = string.format("%d|%d|%u|%d|%d|%d|%d",
+        text_len,
+        newline_count,
+        text_hash,
+        math.floor(width),
+        math.floor(height),
+        math.floor(min_size),
+        math.floor(max_size))
     if font_size_cache[cache_key] then
         return font_size_cache[cache_key]
     end
@@ -1390,12 +1411,6 @@ function ptutil.estimateFontSize(params)
 
     -- Heuristic estimation based on text area requirements
     -- Target: text should fill roughly 60-80% of available area
-
-    -- Count approximate lines based on newlines and text length
-    local newline_count = 0
-    for _ in text:gmatch("\n") do
-        newline_count = newline_count + 1
-    end
 
     -- Estimate how many lines we'll need
     -- Assume average character width is 0.6 * font_size
