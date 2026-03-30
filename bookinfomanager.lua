@@ -105,6 +105,11 @@ local BOOKINFO_COLS_SET = {
     "cover_bb_data",
 }
 
+local BOOKINFO_META_COLS_SET = {}
+for i = 1, 20 do
+    BOOKINFO_META_COLS_SET[i] = BOOKINFO_COLS_SET[i]
+end
+
 local bookinfo_values_sql = {} -- for "VALUES (?, ?, ?,...)" insert sql part
 for i = 1, #BOOKINFO_COLS_SET do
     table.insert(bookinfo_values_sql, "?")
@@ -128,7 +133,9 @@ end
 local BOOKINFO_INSERT_SQL = "INSERT OR REPLACE INTO bookinfo " ..
     "(" .. table.concat(BOOKINFO_COLS_SET, ",") .. ") " ..
     "VALUES (" .. table.concat(bookinfo_values_sql, ",") .. ");"
-local BOOKINFO_SELECT_SQL = "SELECT " .. table.concat(BOOKINFO_COLS_SET, ",") .. " FROM bookinfo " ..
+local BOOKINFO_SELECT_META_SQL = "SELECT " .. table.concat(BOOKINFO_META_COLS_SET, ",") .. " FROM bookinfo " ..
+    "WHERE directory=? AND filename=? AND in_progress=0;"
+local BOOKINFO_SELECT_COVER_SQL = "SELECT " .. table.concat(BOOKINFO_COLS_SET, ",") .. " FROM bookinfo " ..
     "WHERE directory=? AND filename=? AND in_progress=0;"
 local BOOKINFO_IN_PROGRESS_SQL =
 "SELECT in_progress, filename, unsupported FROM bookinfo WHERE directory=? AND filename=?;"
@@ -181,9 +188,9 @@ local function cloneCachedBookInfo(bookinfo)
     return copy
 end
 
-local function buildBookInfoFromRow(row, get_cover)
+local function buildBookInfoFromRow(row, cols, get_cover)
     local bookinfo = {}
-    for num, col in ipairs(BOOKINFO_COLS_SET) do
+    for num, col in ipairs(cols) do
         if col == "pages" then
             -- See http://scilua.org/ljsqlite3.html "SQLite Type Mappings"
             bookinfo[col] = tonumber(row[num]) -- convert cdata<int64_t> to lua number
@@ -345,7 +352,8 @@ function BookInfoManager:openDbConnection()
 
     -- Prepare our most often used SQL statements
     self.set_stmt = self.db_conn:prepare(BOOKINFO_INSERT_SQL)
-    self.get_stmt = self.db_conn:prepare(BOOKINFO_SELECT_SQL)
+    self.get_stmt = self.db_conn:prepare(BOOKINFO_SELECT_META_SQL)
+    self.get_cover_stmt = self.db_conn:prepare(BOOKINFO_SELECT_COVER_SQL)
     self.in_progress_stmt = self.db_conn:prepare(BOOKINFO_IN_PROGRESS_SQL)
 end
 
@@ -578,18 +586,20 @@ function BookInfoManager:getBookInfo(filepath, get_cover)
     end
 
     self:openDbConnection()
-    local row = self.get_stmt:bind(directory, filename):step()
+    local stmt = get_cover and self.get_cover_stmt or self.get_stmt
+    local cols = get_cover and BOOKINFO_COLS_SET or BOOKINFO_META_COLS_SET
+    local row = stmt:bind(directory, filename):step()
     -- NOTE: We do not reset right now because we'll be querying a BLOB,
     --       so we need the data it points to to still be there ;).
 
     if not row then                       -- filepath not in db
-        self.get_stmt:clearbind():reset() -- get ready for next query
+        stmt:clearbind():reset()          -- get ready for next query
         return nil
     end
 
-    local bookinfo = buildBookInfoFromRow(row, get_cover)
+    local bookinfo = buildBookInfoFromRow(row, cols, get_cover)
 
-    self.get_stmt:clearbind():reset() -- get ready for next query
+    stmt:clearbind():reset() -- get ready for next query
 
     -- Cache the bookinfo if we fetched a cover
     if get_cover and bookinfo.cover_bb then
@@ -644,7 +654,8 @@ function BookInfoManager:getBookInfoBatch(filepaths, get_cover)
         table.insert(bind_values, filename)
     end
 
-    local batch_sql = "SELECT " .. table.concat(BOOKINFO_COLS_SET, ",") .. " FROM bookinfo WHERE in_progress=0 AND ("
+    local cols = get_cover and BOOKINFO_COLS_SET or BOOKINFO_META_COLS_SET
+    local batch_sql = "SELECT " .. table.concat(cols, ",") .. " FROM bookinfo WHERE in_progress=0 AND ("
         .. table.concat(where_clauses, " OR ") .. ");"
     local stmt = self.db_conn:prepare(batch_sql)
     stmt:bind(table.unpack(bind_values))
@@ -655,7 +666,7 @@ function BookInfoManager:getBookInfoBatch(filepaths, get_cover)
             break
         end
 
-        local bookinfo = buildBookInfoFromRow(row, get_cover)
+        local bookinfo = buildBookInfoFromRow(row, cols, get_cover)
         local filepath = (bookinfo.directory or "") .. (bookinfo.filename or "")
         results[filepath] = bookinfo
 

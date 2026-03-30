@@ -144,6 +144,9 @@ describe("Database Query Batching", function()
             assert.equal(1, #prepared_sql, "Batch lookup should prepare exactly one combined statement")
             assert.match("WHERE in_progress=0 AND %(%(", prepared_sql[1])
             assert.match("OR %(", prepared_sql[1])
+            assert.not_match("cover_bb_type", prepared_sql[1])
+            assert.not_match("cover_bb_stride", prepared_sql[1])
+            assert.not_match("cover_bb_data", prepared_sql[1])
         end)
 
         it("filters out in-progress rows just like getBookInfo", function()
@@ -307,7 +310,7 @@ describe("Database Query Batching", function()
 
             assert.equal(2, open_count,
                 "Expected one create/open cycle on first use and no extra opens for the second batch")
-            assert.equal(5, prepare_count, "Expected 3 base prepared statements and 1 batch prepare per batch call")
+            assert.equal(6, prepare_count, "Expected 4 base prepared statements and 1 batch prepare per batch call")
         end)
     end)
 
@@ -319,6 +322,43 @@ describe("Database Query Batching", function()
             assert.has_no.errors(function()
                 BookInfoManager:getBookInfoBatch(filepaths, true)
             end)
+        end)
+
+        it("includes cover blob columns in cover-inclusive batch SQL", function()
+            local filepaths = { "/books/book1.epub", "/books/book2.epub" }
+            local prepared_sql = {}
+            local recording_conn = {
+                exec = function() return nil end,
+                prepare = function(self, sql)
+                    table.insert(prepared_sql, sql)
+                    return {
+                        bind = function(self, ...) self._bound = { ... }; return self end,
+                        step = function() return nil end,
+                        reset = function(self) return self end,
+                        clearbind = function(self) self._bound = {}; return self end,
+                        close = function() end,
+                        finalize = function() end,
+                    }
+                end,
+                close = function() end,
+                set_busy_timeout = function() end,
+            }
+
+            package.loaded["lua-ljsqlite3/init"] = {
+                open = function() return recording_conn end
+            }
+            package.loaded["bookinfomanager"] = nil
+            BookInfoManager = require("bookinfomanager")
+
+            BookInfoManager:openDbConnection()
+            prepared_sql = {}
+
+            BookInfoManager:getBookInfoBatch(filepaths, true)
+
+            assert.equal(1, #prepared_sql)
+            assert.match("cover_bb_type", prepared_sql[1])
+            assert.match("cover_bb_stride", prepared_sql[1])
+            assert.match("cover_bb_data", prepared_sql[1])
         end)
     end)
 end)

@@ -232,6 +232,45 @@ describe("BookInfoManager", function()
         end)
     end)
 
+    describe("Prepared statement selection", function()
+        it("prepares separate metadata-only and cover-inclusive single-item selects", function()
+            local prepared_sql = {}
+            mock_conn.prepare = function(self, sql)
+                table.insert(prepared_sql, sql)
+                return {
+                    bind = function() return nil end,
+                    step = function() return nil end,
+                    reset = function() end,
+                    finalize = function() end,
+                    clearbind = function()
+                        return {
+                            reset = function() end,
+                        }
+                    end,
+                }
+            end
+
+            BookInfoManager.db_conn = nil
+            BookInfoManager.db_created = true
+            BookInfoManager:openDbConnection()
+
+            local metadata_select_found = false
+            local cover_select_found = false
+            for _, sql in ipairs(prepared_sql) do
+                if sql:match("SELECT") and sql:match("WHERE directory=%? AND filename=%? AND in_progress=0") then
+                    if sql:match("cover_bb_data") then
+                        cover_select_found = true
+                    else
+                        metadata_select_found = true
+                    end
+                end
+            end
+
+            assert.is_true(metadata_select_found)
+            assert.is_true(cover_select_found)
+        end)
+    end)
+
     describe("Cover cache safety", function()
         it("stores a clone so later caller mutations do not poison the cache", function()
             local filepath = "/books/cache-safe.epub"
