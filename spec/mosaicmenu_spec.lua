@@ -3,7 +3,20 @@ local setup_mocks = require("spec.support.mock_ui")
 
 describe("MosaicMenu", function()
     local MosaicMenu
+    local MosaicMenuItem
     local BookInfoManager
+
+    local function get_upvalue_by_name(fn, name)
+        for index = 1, 20 do
+            local upvalue_name, upvalue_value = debug.getupvalue(fn, index)
+            if not upvalue_name then
+                break
+            end
+            if upvalue_name == name then
+                return upvalue_value
+            end
+        end
+    end
     
     setup(function()
         setup_mocks()
@@ -47,6 +60,7 @@ describe("MosaicMenu", function()
         }
         BookInfoManager = require("bookinfomanager")
         MosaicMenu = require("mosaicmenu")
+        MosaicMenuItem = get_upvalue_by_name(MosaicMenu._updateItemsBuildUI, "MosaicMenuItem")
     end)
     
     describe("MosaicMenu Logic", function()
@@ -259,6 +273,109 @@ describe("MosaicMenu", function()
             BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
 
             assert.are.same({ "/books/book1.epub" }, seen_filepaths)
+        end)
+
+        it("rebuilds overlays from item-local pathchooser state after another menu updates", function()
+            local function make_menu(is_pathchooser)
+                local render_context = setup_mocks.default_render_context()
+                render_context.is_pathchooser = is_pathchooser
+                render_context.series_mode = "series_in_separate_line"
+                return {
+                    render_context = render_context,
+                    getBookInfo = function()
+                        return {
+                            been_opened = true,
+                            status = "reading",
+                            percent_finished = 0.5,
+                            pages = 120,
+                        }
+                    end,
+                    _bookinfo_batch = {
+                        ["/books/book.epub"] = {
+                            cover_fetched = true,
+                            has_cover = false,
+                            title = "Book",
+                            authors = "Author",
+                            series = "Series",
+                            series_index = 1,
+                            pages = 120,
+                        },
+                    },
+                }
+            end
+
+            local normal_item = MosaicMenuItem:new {
+                height = 160,
+                width = 120,
+                entry = { text = "Book", file = "/books/book.epub", path = "/books/book.epub", is_file = true },
+                text = "Book",
+                show_parent = {},
+                mandatory = "120",
+                dimen = { x = 0, y = 0, w = 120, h = 160, copy = function(self) return { x = self.x, y = self.y, w = self.w, h = self.h } end },
+                menu = make_menu(false),
+                do_cover_image = false,
+                do_hint_opened = false,
+            }
+            local pathchooser_item = MosaicMenuItem:new {
+                height = 160,
+                width = 120,
+                entry = { text = "Book", file = "/books/book.epub", path = "/books/book.epub", is_file = true },
+                text = "Book",
+                show_parent = {},
+                mandatory = "120",
+                dimen = { x = 0, y = 0, w = 120, h = 160, copy = function(self) return { x = self.x, y = self.y, w = self.w, h = self.h } end },
+                menu = make_menu(true),
+                do_cover_image = false,
+                do_hint_opened = false,
+            }
+
+            normal_item._series_widget = nil
+            normal_item:buildOverlayWidgets()
+
+            assert.is_not_nil(pathchooser_item)
+            assert.is_not_nil(normal_item._series_widget)
+        end)
+
+        it("does not repeat getBookInfo lookups while building mosaic overlays", function()
+            local get_book_info_calls = 0
+            local render_context = setup_mocks.default_render_context()
+            render_context.hide_file_info = true
+
+            local item = MosaicMenuItem:new {
+                height = 160,
+                width = 120,
+                entry = { text = "Book", file = "/books/book.epub", path = "/books/book.epub", is_file = true },
+                text = "Book",
+                show_parent = {},
+                mandatory = "120",
+                dimen = { x = 0, y = 0, w = 120, h = 160, copy = function(self) return { x = self.x, y = self.y, w = self.w, h = self.h } end },
+                menu = {
+                    render_context = render_context,
+                    getBookInfo = function()
+                        get_book_info_calls = get_book_info_calls + 1
+                        return {
+                            been_opened = true,
+                            status = "reading",
+                            percent_finished = 0.5,
+                            pages = 120,
+                        }
+                    end,
+                    _bookinfo_batch = {
+                        ["/books/book.epub"] = {
+                            cover_fetched = true,
+                            has_cover = false,
+                            title = "Book",
+                            authors = "Author",
+                            pages = 120,
+                        },
+                    },
+                },
+                do_cover_image = false,
+                do_hint_opened = false,
+            }
+
+            assert.is_not_nil(item)
+            assert.equal(1, get_book_info_calls)
         end)
     end)
 end)

@@ -5,6 +5,18 @@ describe("ListMenu", function()
     local ListMenu
     local ListMenuItem
     local BookInfoManager
+
+    local function get_upvalue_by_name(fn, name)
+        for index = 1, 20 do
+            local upvalue_name, upvalue_value = debug.getupvalue(fn, index)
+            if not upvalue_name then
+                break
+            end
+            if upvalue_name == name then
+                return upvalue_value
+            end
+        end
+    end
     
 	    setup(function()
 	        mock_ui()
@@ -62,6 +74,7 @@ describe("ListMenu", function()
         
 	        BookInfoManager = require("bookinfomanager")
 	        ListMenu = require("listmenu")
+            ListMenuItem = get_upvalue_by_name(ListMenu._updateItemsBuildUI, "ListMenuItem")
 	    end)
     
     describe("ListMenu Logic", function()
@@ -316,6 +329,53 @@ describe("ListMenu", function()
             BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
 
             assert.is_nil(menu._bookinfo_batch)
+        end)
+
+        it("stores pathchooser state on each list item instance", function()
+            local function make_menu(is_pathchooser)
+                return {
+                    render_context = {
+                        is_pathchooser = is_pathchooser,
+                        is_touch_device = true,
+                        force_focus_indicator = false,
+                        disable_auto_foldercovers = true,
+                    },
+                    getBookInfo = function()
+                        return { been_opened = false, status = "unread" }
+                    end,
+                    _bookinfo_batch = {},
+                }
+            end
+
+            local pathchooser_item = ListMenuItem:new {
+                height = 32,
+                width = 200,
+                entry = { text = "Folder/", path = "/chooser/folder" },
+                text = "Folder/",
+                show_parent = {},
+                mandatory = "",
+                dimen = { x = 0, y = 0, w = 200, h = 32, copy = function(self) return { x = self.x, y = self.y, w = self.w, h = self.h } end },
+                menu = make_menu(true),
+                do_cover_image = false,
+                do_filename_only = false,
+                do_hint_opened = false,
+            }
+            local browser_item = ListMenuItem:new {
+                height = 32,
+                width = 200,
+                entry = { text = "Folder/", path = "/browser/folder" },
+                text = "Folder/",
+                show_parent = {},
+                mandatory = "",
+                dimen = { x = 0, y = 0, w = 200, h = 32, copy = function(self) return { x = self.x, y = self.y, w = self.w, h = self.h } end },
+                menu = make_menu(false),
+                do_cover_image = false,
+                do_filename_only = false,
+                do_hint_opened = false,
+            }
+
+            assert.is_true(pathchooser_item.is_pathchooser)
+            assert.is_false(browser_item.is_pathchooser)
         end)
 
         it("prefetches only file entries for the page batch", function()

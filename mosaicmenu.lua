@@ -37,11 +37,21 @@ local ptdbg = require("ptdbg")
 
 -- Here is the specific UI implementation for "grid" display modes
 -- (see covermenu.lua for the generic code)
-local is_pathchooser = false
 local plugin_dir = ptutil.getPluginDir()
 local alpha_level = 0.84
 local tag_width = 0.35
 local margin_size = 10
+
+local function resolveIsPathChooser(subject)
+    local render_context = subject and subject.render_context
+    if render_context == nil and subject and subject.menu then
+        render_context = subject.menu.render_context
+    end
+    if render_context and render_context.is_pathchooser ~= nil then
+        return render_context.is_pathchooser
+    end
+    return ptutil.isPathChooser(subject)
+end
 
 -- We will show a rotated dogear at bottom right corner of cover widget for
 -- opened files (the dogear will make it look like a "used book")
@@ -92,6 +102,7 @@ local FakeCover = FrameContainer:extend {
     initial_sizedec = 0,
     color = Blitbuffer.COLOR_GRAY_3,
     background = Blitbuffer.COLOR_GRAY_E,
+    is_pathchooser = false,
 }
 
 function FakeCover:init()
@@ -110,7 +121,7 @@ function FakeCover:init()
     local title_text_color
     local title_background_color
 
-    if is_pathchooser == false then
+    if self.is_pathchooser == false then
         width = self.width - 2 * (self.bordersize + self.margin + self.padding)
         height = self.height - 2 * (self.bordersize + self.margin + self.padding)
         local text_width = width - (Size.padding.small * 2)
@@ -520,11 +531,8 @@ function MosaicMenuItem:update()
 
     -- test to see what style to draw (pathchooser vs one of our fancy modes)
     -- Use cached value from render_context if available, otherwise compute it
-    if self.menu and self.menu.render_context and self.menu.render_context.is_pathchooser ~= nil then
-        is_pathchooser = self.menu.render_context.is_pathchooser
-    else
-        is_pathchooser = ptutil.isPathChooser(self)
-    end
+    self.is_pathchooser = resolveIsPathChooser(self)
+    local is_pathchooser = self.is_pathchooser
 
     self.is_directory = not (self.entry.is_file or self.entry.file)
     if self.is_directory then
@@ -785,6 +793,7 @@ function MosaicMenuItem:update()
         end
 
         local book_info = self.menu.getBookInfo(self.filepath)
+        self.book_info = book_info
         self.been_opened = book_info.been_opened
         if bookinfo and is_pathchooser == false then -- This book is known
             -- Current page / pages are available or more accurate in .sdr/metadata.lua.
@@ -1012,6 +1021,7 @@ function MosaicMenuItem:update()
                         file_deleted = self.file_deleted,
                         bottom_pad = bottom_pad,
                         bottom_right_compensate = not self.show_progress_bar and self.do_hint_opened,
+                        is_pathchooser = self.is_pathchooser,
                     }
                 }
                 self.cover_area = {
@@ -1057,6 +1067,7 @@ function MosaicMenuItem:update()
                     filename_add = "\n" .. hint,
                     initial_sizedec = 4, -- start with a smaller font when filenames only
                     file_deleted = self.file_deleted,
+                    is_pathchooser = self.is_pathchooser,
                 }
             }
             self.cover_area = {
@@ -1080,6 +1091,7 @@ function MosaicMenuItem:update()
                     filename_add = "\n" .. filesize,
                     initial_sizedec = 4, -- start with a smaller font when filenames only
                     file_deleted = self.file_deleted,
+                    is_pathchooser = self.is_pathchooser,
                 }
             }
             self.cover_area = {
@@ -1137,7 +1149,7 @@ function MosaicMenuItem:buildOverlayWidgets()
     
     local bookinfo = self.bookinfo
     -- Guard against missing render_context (can happen in tests) or pathchooser mode
-    if not bookinfo or is_pathchooser or not self.menu or not self.menu.render_context then return end
+    if not bookinfo or self.is_pathchooser or not self.menu or not self.menu.render_context then return end
     
     -- Series widget
     local series_mode = self.menu.render_context.series_mode
@@ -1240,7 +1252,7 @@ function MosaicMenuItem:buildOverlayWidgets()
         progresstxt = (" " .. (self.mandatory or "???") .. " ")
     elseif self.status ~= "complete" and self.status ~= "abandoned" and self.percent_finished ~= nil then
         local progress_text_format = self.menu.render_context.progress_text_format
-        local book_info = self.menu.getBookInfo(self.filepath)
+        local book_info = self.book_info or {}
         local pages = book_info.pages or bookinfo.pages or nil
 
         if progress_text_format == "status_only" then
@@ -1309,7 +1321,7 @@ function MosaicMenuItem:paintTo(bb, x, y)
     local cover_top = y + cover.offset_y
     local cover_bottom = cover_top + cover.height
 
-    if self.do_hint_opened and self.been_opened and is_pathchooser == false then
+    if self.do_hint_opened and self.been_opened and self.is_pathchooser == false then
         if self.status == "complete" and not self.show_progress_bar then
             corner_mark = complete_mark
             local corner_mark_margin = math.floor((corner_mark_size - corner_mark:getSize().h) / 2)
@@ -1336,7 +1348,7 @@ function MosaicMenuItem:paintTo(bb, x, y)
             self._series_widget:paintTo(bb, pos_x, pos_y)
         end
 
-        if self.show_progress_bar and is_pathchooser == false then
+        if self.show_progress_bar and self.is_pathchooser == false then
             -- Calculate progress bar width
             local progress_widget_width_mult = 1.0
             local est_page_count = self.pages or nil
@@ -1387,7 +1399,7 @@ function MosaicMenuItem:paintTo(bb, x, y)
         end
 
         -- Paint cached progress text widget
-        if self._progress_text_widget and is_pathchooser == false then
+        if self._progress_text_widget and self.is_pathchooser == false then
             local progress_widget_margin = math.floor((corner_mark_size - self._progress_text_widget:getSize().h) / 2)
             local pos_x = x
             local pos_y = cover_bottom - corner_mark_size +
@@ -1457,12 +1469,6 @@ function MosaicMenu:_recalculateDimen()
 
     -- test to see what style to draw (pathchooser vs one of our fancy modes)
     -- Use cached value from render_context if available, otherwise compute it
-    if self.render_context and self.render_context.is_pathchooser ~= nil then
-        is_pathchooser = self.render_context.is_pathchooser
-    else
-        is_pathchooser = ptutil.isPathChooser(self)
-    end
-
     -- Find out available height from other UI elements made in Menu
     self.others_height = 0
     if self.title_bar then -- init() has been done

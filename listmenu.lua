@@ -37,9 +37,19 @@ local ptdbg = require("ptdbg")
 
 -- Here is the specific UI implementation for "list" display modes
 -- (see covermenu.lua for the generic code)
-local is_pathchooser = false
 local plugin_dir = ptutil.getPluginDir()
 local scale_by_size = Screen:scaleBySize(1000000) * (1 / 1000000)
+
+local function resolveIsPathChooser(subject)
+    local render_context = subject and subject.render_context
+    if render_context == nil and subject and subject.menu then
+        render_context = subject.menu.render_context
+    end
+    if render_context and render_context.is_pathchooser ~= nil then
+        return render_context.is_pathchooser
+    end
+    return ptutil.isPathChooser(subject)
+end
 
 -- Based on menu.lua's MenuItem
 local ListMenuItem = InputContainer:extend {
@@ -162,11 +172,8 @@ function ListMenuItem:update()
 
     -- test to see what style to draw (pathchooser vs one of our fancy modes)
     -- Use cached value from render_context if available, otherwise compute it
-    if self.menu and self.menu.render_context and self.menu.render_context.is_pathchooser ~= nil then
-        is_pathchooser = self.menu.render_context.is_pathchooser
-    else
-        is_pathchooser = ptutil.isPathChooser(self)
-    end
+    self.is_pathchooser = resolveIsPathChooser(self)
+    local is_pathchooser = self.is_pathchooser
 
     self.is_directory = not (self.entry.is_file or self.entry.file)
     if self.is_directory then
@@ -1342,12 +1349,6 @@ function ListMenu:_recalculateDimen()
 
     -- test to see what style to draw (pathchooser vs one of our fancy modes)
     -- Use cached value from render_context if available, otherwise compute it
-    if self.render_context and self.render_context.is_pathchooser ~= nil then
-        is_pathchooser = self.render_context.is_pathchooser
-    else
-        is_pathchooser = ptutil.isPathChooser(self)
-    end
-
     if self.title_bar then -- Menu:init() has been done
         if not self.is_borderless then
             self.others_height = self.others_height + 2
