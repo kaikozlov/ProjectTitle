@@ -551,7 +551,8 @@ function MosaicMenuItem:update()
             subfolder_cover_image = ptutil.getFolderCover(self.filepath, dimen.w, dimen.h, self.entry.pt_cover_path)
             -- check for books with covers in the subfolder
             if subfolder_cover_image == nil and not self.menu.render_context.disable_auto_foldercovers then
-                subfolder_cover_image = ptutil.getSubfolderCoverImages(self.filepath, max_img_w, max_img_h)
+                subfolder_cover_image = ptutil.getSubfolderCoverImages(
+                    self.filepath, max_img_w, max_img_h, self.menu.render_context)
             end
             -- use stock folder icon
             if subfolder_cover_image == nil then

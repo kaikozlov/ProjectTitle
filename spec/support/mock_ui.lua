@@ -488,7 +488,6 @@ local function default_render_context()
     return {
         -- Display settings
         hide_file_info = nil,
-        show_progress_in_mosaic = nil,
         show_mosaic_titles = nil,
         progress_text_format = "status_and_percent",
         series_mode = nil,

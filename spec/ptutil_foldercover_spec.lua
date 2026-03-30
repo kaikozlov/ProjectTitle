@@ -369,6 +369,57 @@ describe("ptutil Folder Cover Generation", function()
             assert.is_not_nil(second)
             assert.equal(1, query_calls)
         end)
+
+        it("uses render_context folder-cover layout settings without direct setting lookups", function()
+            local get_setting_calls = 0
+            local original_get_folder_cover_candidate_filepaths = BookInfoManager_mock.getFolderCoverCandidateFilepaths
+            local original_getBookInfoBatch = BookInfoManager_mock.getBookInfoBatch
+            local original_getSetting = BookInfoManager_mock.getSetting
+
+            util_mock.directoryExists = function(path)
+                return path == "/books/folder"
+            end
+            util_mock.fileExists = function(path)
+                return path:match("^/books/folder/")
+            end
+            BookInfoManager_mock.getFolderCoverCandidateFilepaths = function(self, folder, include_subfolders)
+                return {
+                    "/books/folder/a.epub",
+                    "/books/folder/b.epub",
+                    "/books/folder/c.epub",
+                    "/books/folder/d.epub",
+                }
+            end
+            BookInfoManager_mock.getBookInfoBatch = function(self, filepaths, get_cover)
+                local results = {}
+                for _, filepath in ipairs(filepaths) do
+                    results[filepath] = {
+                        cover_w = 100,
+                        cover_h = 150,
+                        cover_bb = { filepath = filepath },
+                        has_cover = "Y",
+                    }
+                end
+                return results
+            end
+            BookInfoManager_mock.getSetting = function(self, key)
+                if key == "use_stacked_foldercovers" then
+                    get_setting_calls = get_setting_calls + 1
+                end
+                return nil
+            end
+
+            local result = ptutil.getSubfolderCoverImages("/books/folder", 100, 100, {
+                use_stacked_foldercovers = true,
+            })
+
+            BookInfoManager_mock.getFolderCoverCandidateFilepaths = original_get_folder_cover_candidate_filepaths
+            BookInfoManager_mock.getBookInfoBatch = original_getBookInfoBatch
+            BookInfoManager_mock.getSetting = original_getSetting
+
+            assert.is_not_nil(result)
+            assert.equal(0, get_setting_calls)
+        end)
     end)
 
     describe("line function", function()

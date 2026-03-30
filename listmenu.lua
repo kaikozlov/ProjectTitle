@@ -235,7 +235,8 @@ function ListMenuItem:update()
             subfolder_cover_image = ptutil.getFolderCover(self.filepath, max_img_w * 0.82, max_img_h, self.entry.pt_cover_path)
             -- check for books with covers in the subfolder
             if subfolder_cover_image == nil and not self.menu.render_context.disable_auto_foldercovers then
-                subfolder_cover_image = ptutil.getSubfolderCoverImages(self.filepath, max_img_w, max_img_h)
+                subfolder_cover_image = ptutil.getSubfolderCoverImages(
+                    self.filepath, max_img_w, max_img_h, self.menu.render_context)
             end
             -- use stock folder icon
             local stock_image = plugin_dir .. "/resources/folder.svg"

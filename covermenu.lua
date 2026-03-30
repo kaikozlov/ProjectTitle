@@ -142,7 +142,6 @@ function CoverMenu:buildRenderContext()
     return {
         -- Display settings
         hide_file_info = BookInfoManager:getSetting("hide_file_info"),
-        show_progress_in_mosaic = BookInfoManager:getSetting("show_progress_in_mosaic"),
         show_mosaic_titles = BookInfoManager:getSetting("show_mosaic_titles"),
         progress_text_format = BookInfoManager:getSetting("progress_text_format") or "status_and_percent",
         series_mode = BookInfoManager:getSetting("series_mode"),

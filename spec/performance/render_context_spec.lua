@@ -55,13 +55,19 @@ describe("Render Context Optimization", function()
     describe("buildRenderContext coverage", function()
         it("captures all settings used in mosaicmenu rendering", function()
             package.loaded["covermenu"] = nil
+            local requested_keys = {}
+            local original_get_setting = BookInfoManager.getSetting
+            BookInfoManager.getSetting = function(self, key)
+                requested_keys[#requested_keys + 1] = key
+                return original_get_setting(self, key)
+            end
             local CoverMenu = require("covermenu")
 
             local context = CoverMenu.buildRenderContext({})
+            BookInfoManager.getSetting = original_get_setting
 
             -- Verify all settings needed by mosaicmenu are present
             assert.is_not_nil(context.hide_file_info ~= nil or context.hide_file_info == nil, "hide_file_info should be captured")
-            assert.is_not_nil(context.show_progress_in_mosaic ~= nil or context.show_progress_in_mosaic == nil)
             assert.is_not_nil(context.show_mosaic_titles ~= nil or context.show_mosaic_titles == nil)
             assert.is_not_nil(context.progress_text_format)
             assert.is_not_nil(context.series_mode ~= nil or context.series_mode == nil)
@@ -70,6 +76,7 @@ describe("Render Context Optimization", function()
             assert.is_not_nil(context.use_stacked_foldercovers ~= nil or context.use_stacked_foldercovers == nil)
             assert.is_not_nil(context.force_focus_indicator ~= nil or context.force_focus_indicator == nil)
             assert.is_boolean(context.is_touch_device)
+            assert.is_nil(table.concat(requested_keys, "|"):match("show_progress_in_mosaic"))
 
             -- NEW: These should be added to render_context for Phase 2
             -- Currently these are called directly in ptutil.lua hot paths

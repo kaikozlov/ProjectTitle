@@ -610,10 +610,17 @@ function ptutil.query_cover_paths(folder, include_subfolders)
     return BookInfoManager:getFolderCoverCandidateFilepaths(folder, include_subfolders)
 end
 
-function ptutil.get_thumbnail_size(max_w, max_h)
+local function useStackedFolderCovers(render_context)
+    if render_context and render_context.use_stacked_foldercovers ~= nil then
+        return render_context.use_stacked_foldercovers
+    end
+    return BookInfoManager:getSetting("use_stacked_foldercovers")
+end
+
+function ptutil.get_thumbnail_size(max_w, max_h, render_context)
     local max_img_w = 0
     local max_img_h = 0
-    if BookInfoManager:getSetting("use_stacked_foldercovers") then
+    if useStackedFolderCovers(render_context) then
         max_img_w = (max_w * 0.75) - (Size.border.thin * 2) - Size.padding.default
         max_img_h = (max_h * 0.75) - (Size.border.thin * 2) - Size.padding.default
     else
@@ -663,9 +670,9 @@ local function hydrate_cover_entries(filepaths)
     return entries
 end
 
-local function build_cover_widgets(entries, max_w, max_h)
+local function build_cover_widgets(entries, max_w, max_h, render_context)
     local covers = {}
-    local max_img_w, max_img_h = ptutil.get_thumbnail_size(max_w, max_h)
+    local max_img_w, max_img_h = ptutil.get_thumbnail_size(max_w, max_h, render_context)
     for _, entry in ipairs(entries or {}) do
         local border_total = (Size.border.thin * 2)
         local _, _, scale_factor = BookInfoManager.getCachedCoverSize(
@@ -800,7 +807,7 @@ function ptutil.build_grid(images, max_w, max_h)
     return layout
 end
 
-function ptutil.getSubfolderCoverImages(filepath, max_w, max_h)
+function ptutil.getSubfolderCoverImages(filepath, max_w, max_h, render_context)
     -- Return nil early if filepath is nil
     if not filepath or filepath == "" then return nil end
 
@@ -824,19 +831,16 @@ function ptutil.getSubfolderCoverImages(filepath, max_w, max_h)
     end
 
     local cover_entries = hydrate_cover_entries(cover_filepaths)
-    local images = build_cover_widgets(cover_entries, max_w, max_h)
+    local images = build_cover_widgets(cover_entries, max_w, max_h, render_context)
 
     -- Return nil if no images found
     if #images == 0 then return nil end
 
-    local result
-    if BookInfoManager:getSetting("use_stacked_foldercovers") then
-        result = ptutil.build_diagonal_stack(images, max_w, max_h)
+    if useStackedFolderCovers(render_context) then
+        return ptutil.build_diagonal_stack(images, max_w, max_h)
     else
-        result = ptutil.build_grid(images, max_w, max_h)
+        return ptutil.build_grid(images, max_w, max_h)
     end
-
-    return result
 end
 
 function ptutil.line(width, color, thickness)
