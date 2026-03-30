@@ -281,10 +281,13 @@ local function finalize_stmt(stmt)
     if not stmt then
         return
     end
-    if stmt.finalize then
-        stmt:finalize()
-    elseif stmt.close then
+    local ok = pcall(function()
         stmt:close()
+    end)
+    if not ok then
+        pcall(function()
+            stmt:finalize()
+        end)
     end
 end
 
@@ -788,9 +791,7 @@ function BookInfoManager:getBookInfoBatch(filepaths, get_cover)
     end
 
     stmt:clearbind():reset()
-    if stmt.finalize then
-        stmt:finalize()
-    end
+    finalize_stmt(stmt)
 
     for _, filepath in ipairs(uncached_paths) do
         if results[filepath] == nil then

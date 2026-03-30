@@ -104,6 +104,43 @@ describe("Database Query Batching", function()
             end
         end)
 
+        it("closes close-only prepared statements without touching finalize", function()
+            local close_calls = 0
+            local recording_conn = {
+                exec = function() return nil end,
+                prepare = function(self, sql)
+                    return {
+                        bind = function(self, ...)
+                            return self
+                        end,
+                        step = function()
+                            return nil
+                        end,
+                        clearbind = function(self)
+                            return self
+                        end,
+                        reset = function(self)
+                            return self
+                        end,
+                        close = function()
+                            close_calls = close_calls + 1
+                        end,
+                    }
+                end,
+                close = function() end,
+            }
+
+            BookInfoManager.db_conn = recording_conn
+            BookInfoManager.db_created = true
+
+            local results = BookInfoManager:getBookInfoBatch({
+                "/books/book1.epub",
+            }, false)
+
+            assert.is_table(results)
+            assert.equal(1, close_calls)
+        end)
+
         it("prepares one combined statement for a 5-item metadata batch", function()
             local filepaths = {
                 "/books/book1.epub",

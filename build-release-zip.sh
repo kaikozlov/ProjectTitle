@@ -63,7 +63,7 @@ for dir in l10n/*/; do
         LOCALE_NAME=$(basename "$dir")
         echo "Compiling: ${LOCALE_NAME}/koreader.po -> ${LOCALE_NAME}/koreader.mo"
         if msgfmt -o "$MO_FILE" "${dir}koreader.po"; then
-            ((COMPILE_COUNT++))
+            ((COMPILE_COUNT++)) || true
         else
             echo "Error: Failed to compile ${LOCALE_NAME}/koreader.po!" >&2
         fi

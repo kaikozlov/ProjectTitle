@@ -446,12 +446,19 @@ function CoverMenu:setupLayout()
         right1_icon_hold_callback = false,
     }
 
+    local display_mode = self._pt_filechooser_display_mode
+    if display_mode == nil then
+        display_mode = BookInfoManager:getSetting("filemanager_display_mode")
+        self._pt_filechooser_display_mode = display_mode
+    end
+
     local file_chooser = FileChooser:new {
         name = "filemanager",
         path = self.root_path,
         focused_path = self.focused_file,
         show_parent = self.show_parent,
         init = function(this)
+            CoverMenu.configureFileChooser(this, display_mode)
             CoverMenu.prepareMenuInit(this)
             _FileChooser_init_orig(this)
             CoverMenu.finishMenuInit(this)
@@ -472,7 +479,7 @@ function CoverMenu:setupLayout()
             self.filesearcher:onShowFileSearch(search_string)
         end,
     }
-    CoverMenu.configureFileChooser(file_chooser, self._pt_filechooser_display_mode)
+    CoverMenu.configureFileChooser(file_chooser, display_mode)
     self.file_chooser = file_chooser
     self.focused_file = nil -- use it only once
 

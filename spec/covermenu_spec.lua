@@ -225,6 +225,30 @@ describe("CoverMenu", function()
             assert.equal("file2.epub", result[2].text)
         end)
 
+        it("removes go-up entries from file browser even when they are not the first row", function()
+            local menu = {
+                file_chooser = { path = "/test" }
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            CoverMenu._FileChooser_genItemTable_orig = function()
+                return {
+                    { text = "Current folder helper", path = "/test/.", bold = true },
+                    { text = "⬆ ../", path = "/test/..", is_go_up = true },
+                    { text = "file1.epub", path = "/test/file1.epub", is_file = true },
+                }
+            end
+
+            local result = menu:genItemTable({}, {}, "/test")
+
+            assert.is_not_nil(result)
+            assert.equal(2, #result)
+            assert.equal("Current folder helper", result[1].text)
+            assert.equal("file1.epub", result[2].text)
+            assert.is_nil(result[1].is_go_up)
+            assert.is_nil(result[2].is_go_up)
+        end)
+
         it("keeps .. entry for PathChooser", function()
             local menu = {
                 file_chooser = { path = nil } -- PathChooser has nil path
@@ -433,6 +457,77 @@ describe("CoverMenu", function()
             assert.equal("alpha.epub", first_result[1].text)
             assert.equal("regular.epub", second_result[1].text)
             assert.equal(1, library_calls)
+        end)
+    end)
+
+    describe("setupLayout", function()
+        it("configures the file chooser before init builds the first page", function()
+            local original_init = FileChooser.init
+            local init_state = {}
+
+            FileChooser.init = function(this)
+                init_state.display_mode_type = this.display_mode_type
+                init_state.updateItems = this.updateItems
+                init_state.genItemTable = this.genItemTable
+                return original_init(this)
+            end
+
+            package.loaded["covermenu"] = nil
+            CoverMenu = require("covermenu")
+            CoverMenu._Menu_updatePageInfo_orig = function() end
+            CoverMenu._FileChooser_genItemTable_orig = function()
+                return {}
+            end
+
+            local menu = {
+                show_parent = {},
+                root_path = "/test",
+                onHome = function() end,
+                registerKeyEvents = function() end,
+                _pt_filechooser_display_mode = "list_image_meta",
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+
+            FileChooser.init = original_init
+
+            assert.equal("list", init_state.display_mode_type)
+            assert.equal(CoverMenu.updateItems, init_state.updateItems)
+            assert.equal(CoverMenu.genItemTable, init_state.genItemTable)
+        end)
+
+        it("restores the saved filemanager display mode when the instance-scoped mode field is missing", function()
+            package.loaded["covermenu"] = nil
+            CoverMenu = require("covermenu")
+            CoverMenu._Menu_updatePageInfo_orig = function() end
+            CoverMenu._FileChooser_genItemTable_orig = function()
+                return {}
+            end
+
+            local original_get_setting = BookInfoManager.getSetting
+            BookInfoManager.getSetting = function(_, key)
+                if key == "filemanager_display_mode" then
+                    return "list_image_meta"
+                end
+                return original_get_setting(BookInfoManager, key)
+            end
+
+            local menu = {
+                show_parent = {},
+                root_path = "/test",
+                onHome = function() end,
+                registerKeyEvents = function() end,
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+
+            BookInfoManager.getSetting = original_get_setting
+
+            assert.equal("list", menu.file_chooser.display_mode_type)
+            assert.equal(CoverMenu.updateItems, menu.file_chooser.updateItems)
+            assert.equal("list_image_meta", menu._pt_filechooser_display_mode)
         end)
     end)
 

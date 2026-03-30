@@ -24,6 +24,25 @@ local _ = require("l10n.gettext")
 local ptdbg = require("ptdbg")
 local BookInfoManager = require("bookinfomanager")
 
+local bxor = (_G.bit and _G.bit.bxor) or (_G.bit32 and _G.bit32.bxor)
+if not bxor then
+    bxor = function(left, right)
+        local result = 0
+        local bit_value = 1
+        while left > 0 or right > 0 do
+            local left_bit = left % 2
+            local right_bit = right % 2
+            if left_bit ~= right_bit then
+                result = result + bit_value
+            end
+            left = math.floor(left / 2)
+            right = math.floor(right / 2)
+            bit_value = bit_value * 2
+        end
+        return result
+    end
+end
+
 
 --[[
     The settings and functions in this file are to intended make user patches easier.
@@ -1362,7 +1381,7 @@ local function get_text_fingerprint(text)
         if byte == 10 then
             newline_count = newline_count + 1
         end
-        hash = (hash ~ byte) * 16777619 % 4294967296
+        hash = bxor(hash, byte) * 16777619 % 4294967296
     end
     return newline_count, hash
 end

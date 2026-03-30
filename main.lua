@@ -155,6 +155,7 @@ local curr_display_modes = {
     history     = false, -- not initialized yet
     collections = false, -- not initialized yet
 }
+local _widget_update_item_table_funcs = {}
 local series_mode = nil  -- defaults to not display series
 
 local ProjectTitle = WidgetContainer:extend {
@@ -990,12 +991,63 @@ function ProjectTitle:setDisplayMode(display_mode)
     end
 end
 
+local function isFileChooserConfiguredForMode(file_chooser, display_mode)
+    if not file_chooser then
+        return false
+    end
+
+    local expected_type = display_mode and display_mode:gsub("_.*", "") or nil
+    if file_chooser.display_mode_type ~= expected_type then
+        return false
+    end
+
+    if not display_mode then
+        return file_chooser.updateItems == _FileChooser_updateItems_orig
+            and file_chooser.onCloseWidget == _FileChooser_onCloseWidget_orig
+            and file_chooser.genItemTable == _FileChooser_genItemTable_orig
+            and file_chooser._recalculateDimen == _FileChooser__recalculateDimen_orig
+    end
+
+    local CoverMenu = require("covermenu")
+    return file_chooser.updateItems == CoverMenu.updateItems
+        and file_chooser.onCloseWidget == CoverMenu.onCloseWidget
+        and file_chooser.genItemTable == CoverMenu.genItemTable
+end
+
+local function getCachedUpdateItemTableFunc(display_mode)
+    if not display_mode then
+        return nil
+    end
+    if _widget_update_item_table_funcs[display_mode] == nil then
+        _widget_update_item_table_funcs[display_mode] = ProjectTitle.getUpdateItemTableFunc(display_mode)
+    end
+    return _widget_update_item_table_funcs[display_mode]
+end
+
+local function isWidgetConfiguredForMode(widget_id, display_mode)
+    local widget = _modified_widgets[widget_id]
+    if not widget then
+        return false
+    end
+
+    if not display_mode then
+        return widget.updateItemTable == _updateItemTable_orig_funcs[widget_id]
+            and widget._pt_widget_display_mode == nil
+    end
+
+    return widget.updateItemTable == getCachedUpdateItemTableFunc(display_mode)
+        and widget._pt_widget_display_mode == display_mode
+end
+
 function ProjectTitle:setupFileManagerDisplayMode(display_mode)
     if not DISPLAY_MODES[display_mode] then
         display_mode = nil                                                  -- unknown mode, fallback to classic
     end
     if init_done and display_mode == curr_display_modes["filemanager"] then -- no change
-        return
+        local file_chooser = self.ui and self.ui.file_chooser
+        if not file_chooser or isFileChooserConfiguredForMode(file_chooser, display_mode) then
+            return
+        end
     end
     if init_done then -- save new mode in db
         BookInfoManager:saveSetting(display_mode_db_names["filemanager"], display_mode)
@@ -1064,7 +1116,9 @@ function ProjectTitle.setupWidgetDisplayMode(widget_id, display_mode)
         display_mode = nil                                              -- unknown mode, fallback to classic
     end
     if init_done and display_mode == curr_display_modes[widget_id] then -- no change
-        return
+        if isWidgetConfiguredForMode(widget_id, display_mode) then
+            return
+        end
     end
     if init_done then -- save new mode in db
         BookInfoManager:saveSetting(display_mode_db_names[widget_id], display_mode)
@@ -1081,10 +1135,12 @@ function ProjectTitle.setupWidgetDisplayMode(widget_id, display_mode)
     local widget = _modified_widgets[widget_id]
     if display_mode then
         ProjectTitle.addFileDialogButtons(widget_id)
-        widget.updateItemTable = ProjectTitle.getUpdateItemTableFunc(display_mode)
+        widget.updateItemTable = getCachedUpdateItemTableFunc(display_mode)
+        widget._pt_widget_display_mode = display_mode
     else -- classic mode
         ProjectTitle.removeFileDialogButtons(widget_id)
         widget.updateItemTable = _updateItemTable_orig_funcs[widget_id]
+        widget._pt_widget_display_mode = nil
     end
 end
 
