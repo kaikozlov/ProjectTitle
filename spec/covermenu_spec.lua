@@ -482,6 +482,34 @@ describe("CoverMenu", function()
 
             assert.equal("hero", menu.title_bar.center_icon)
         end)
+
+        it("routes file opens through filemanagerutil.openFile", function()
+            local open_args
+            package.loaded["apps/filemanager/filemanagerutil"].openFile = function(file_manager, path)
+                open_args = { file_manager = file_manager, path = path }
+            end
+
+            local menu = {
+                show_parent = {},
+                root_path = "/test",
+                registerKeyEvents = function() end,
+                file_chooser = { path = "/test" },
+                openFile = function()
+                    error("expected filemanagerutil.openFile to handle file opens")
+                end,
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+            menu.file_chooser:onFileSelect({
+                path = "/test/book.epub",
+                is_file = true,
+            })
+
+            assert.is_not_nil(open_args)
+            assert.equal(menu, open_args.file_manager)
+            assert.equal("/test/book.epub", open_args.path)
+        end)
     end)
 
     describe("updateItems", function()

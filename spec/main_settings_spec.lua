@@ -111,4 +111,87 @@ describe("Main Settings", function()
         assert.is_nil(BookInfoManager:getSetting("show_mosaic_titles"))
         assert.is_falsy(toggle_item.checked_func())
     end)
+
+    it("marks display mode entries as radio menu items", function()
+        CoverBrowser.ui = {
+            file_chooser = {
+                nb_cols_portrait = 3,
+                nb_rows_portrait = 4,
+                nb_cols_landscape = 4,
+                nb_rows_landscape = 3,
+                files_per_page = 10,
+                updateItems = function() end
+            }
+        }
+        CoverBrowser.modes = {
+            { "Mode 1", "mode1" },
+            { "Mode 2", "mode2" },
+        }
+
+        local menu_items = {}
+        CoverBrowser:addToMainMenu(menu_items)
+
+        local display_mode_menu = menu_items.filemanager_display_mode
+        assert.is_not_nil(display_mode_menu)
+        assert.is_true(#display_mode_menu.sub_item_table >= 2)
+        assert.is_true(display_mode_menu.sub_item_table[1].radio)
+        assert.is_true(display_mode_menu.sub_item_table[2].radio)
+    end)
+
+    it("loads doublespinwidget via KOReader's standard module path", function()
+        local required_module
+        local old_standard_preload = package.preload["ui/widget/doublespinwidget"]
+        local old_absolute_preload = package.preload["/ui/widget/doublespinwidget"]
+        local old_standard_loaded = package.loaded["ui/widget/doublespinwidget"]
+        local old_absolute_loaded = package.loaded["/ui/widget/doublespinwidget"]
+
+        package.loaded["ui/widget/doublespinwidget"] = nil
+        package.loaded["/ui/widget/doublespinwidget"] = nil
+
+        package.preload["ui/widget/doublespinwidget"] = function()
+            required_module = "ui/widget/doublespinwidget"
+            return {
+                new = function(_, o) return o or {} end
+            }
+        end
+        package.preload["/ui/widget/doublespinwidget"] = function()
+            error("unexpected absolute require path for doublespinwidget")
+        end
+
+        CoverBrowser.ui = {
+            file_chooser = {
+                nb_cols_portrait = 3,
+                nb_rows_portrait = 4,
+                nb_cols_landscape = 4,
+                nb_rows_landscape = 3,
+                files_per_page = 10,
+                updateItems = function() end
+            }
+        }
+        CoverBrowser.modes = { { "Mode 1", "mode1" } }
+
+        local menu_items = {}
+        CoverBrowser:addToMainMenu(menu_items)
+
+        local items_per_page
+        for _, item in ipairs(menu_items.filemanager_display_mode.sub_item_table) do
+            if item.text == "Items per page" then
+                items_per_page = item
+                break
+            end
+        end
+
+        assert.is_not_nil(items_per_page)
+        local portrait_item = items_per_page.sub_item_table[1]
+        assert.is_function(portrait_item.callback)
+
+        portrait_item.callback()
+
+        assert.equal("ui/widget/doublespinwidget", required_module)
+
+        package.preload["ui/widget/doublespinwidget"] = old_standard_preload
+        package.preload["/ui/widget/doublespinwidget"] = old_absolute_preload
+        package.loaded["ui/widget/doublespinwidget"] = old_standard_loaded
+        package.loaded["/ui/widget/doublespinwidget"] = old_absolute_loaded
+    end)
 end)

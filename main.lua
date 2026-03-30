@@ -415,6 +415,7 @@ function ProjectTitle:addToMainMenu(menu_items)
             checked_func = function()
                 return mode == curr_display_modes["filemanager"]
             end,
+            radio = true,
             callback = function()
                 self:setDisplayMode(mode)
             end,
@@ -424,6 +425,7 @@ function ProjectTitle:addToMainMenu(menu_items)
             checked_func = function()
                 return mode == curr_display_modes["history"]
             end,
+            radio = true,
             callback = function()
                 ProjectTitle.setupWidgetDisplayMode("history", mode)
             end,
@@ -433,6 +435,7 @@ function ProjectTitle:addToMainMenu(menu_items)
             checked_func = function()
                 return mode == curr_display_modes["collections"]
             end,
+            radio = true,
             callback = function()
                 ProjectTitle.setupWidgetDisplayMode("collections", mode)
             end,
@@ -477,7 +480,7 @@ function ProjectTitle:addToMainMenu(menu_items)
                 callback = function()
                     local nb_cols = fc.nb_cols_portrait
                     local nb_rows = fc.nb_rows_portrait
-                    local DoubleSpinWidget = require("/ui/widget/doublespinwidget")
+                    local DoubleSpinWidget = require("ui/widget/doublespinwidget")
                     local widget = DoubleSpinWidget:new {
                         title_text = _("Portrait cover grid mode"),
                         width_factor = 0.6,
@@ -525,7 +528,7 @@ function ProjectTitle:addToMainMenu(menu_items)
                 callback = function()
                     local nb_cols = fc.nb_cols_landscape
                     local nb_rows = fc.nb_rows_landscape
-                    local DoubleSpinWidget = require("/ui/widget/doublespinwidget")
+                    local DoubleSpinWidget = require("ui/widget/doublespinwidget")
                     local widget = DoubleSpinWidget:new {
                         title_text = _("Landscape cover grid mode"),
                         width_factor = 0.6,
