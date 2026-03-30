@@ -59,6 +59,7 @@ describe("BookInfoManager", function()
         }
         package.loaded["util"] = {
             fileExists = function() return false end,
+            directoryExists = function() return false end,
             splitFilePathName = function(path)
                 local dir, file = path:match("^(.-)([^/]+)$")
                 return dir or "", file or path
@@ -273,6 +274,184 @@ describe("BookInfoManager", function()
 
             assert.is_true(metadata_select_found)
             assert.is_true(cover_select_found)
+        end)
+        it("prepares separate exact-directory and subtree folder-cover selects", function()
+            local prepared_sql = {}
+            mock_conn.prepare = function(self, sql)
+                table.insert(prepared_sql, sql)
+                return {
+                    bind = function(self, ...)
+                        return self
+                    end,
+                    step = function()
+                        return nil
+                    end,
+                    reset = function() end,
+                    finalize = function() end,
+                    clearbind = function()
+                        return {
+                            reset = function() end,
+                        }
+                    end,
+                }
+            end
+
+            BookInfoManager.db_conn = nil
+            BookInfoManager.db_created = true
+            BookInfoManager:openDbConnection()
+
+            local direct_select_found = false
+            local subtree_select_found = false
+            for _, sql in ipairs(prepared_sql) do
+                if sql:match("SELECT directory, filename FROM bookinfo") and sql:match("has_cover = 'Y'") then
+                    if sql:match("directory%s*=%?") then
+                        direct_select_found = true
+                    elseif sql:match("directory LIKE %? ESCAPE '\\'") then
+                        subtree_select_found = true
+                    end
+                end
+            end
+
+            assert.is_true(direct_select_found)
+            assert.is_true(subtree_select_found)
+        end)
+
+        it("queries library entries through the shared db connection with escaped LIKE wildcards", function()
+            local prepared_sql
+            local bound_values
+            mock_conn.prepare = function(self, sql)
+                prepared_sql = sql
+                return {
+                    bind = function(self, ...)
+                        bound_values = { ... }
+                        return self
+                    end,
+                    step = function()
+                        return nil
+                    end,
+                    reset = function() end,
+                    finalize = function() end,
+                    clearbind = function()
+                        return {
+                            reset = function() end,
+                        }
+                    end,
+                }
+            end
+
+            BookInfoManager.db_conn = nil
+            BookInfoManager.db_created = true
+
+            local result = BookInfoManager:getLibraryEntries("/books/100%_semi;quote'")
+
+            assert.is_table(result)
+            assert.equal(mock_conn, BookInfoManager.db_conn)
+            assert.match("LIKE %?", prepared_sql)
+            assert.match("ESCAPE", prepared_sql)
+            assert.is_nil(prepared_sql:match("ORDER BY%s+authors"))
+            assert.equal("/books/100\\%\\_semi;quote'/%", bound_values[1])
+        end)
+
+        it("sorts library entries in Lua using authors, series, series index, then title", function()
+            mock_conn.prepare = function(self, sql)
+                local rows = {
+                    { "/books/library/", "gamma.epub", "Zed", "Series B", 2, "Gamma" },
+                    { "/books/library/", "beta.epub", "Alpha", "Series A", 2, "Beta" },
+                    { "/books/library/", "alpha.epub", "Alpha", "Series A", 1, "Alpha" },
+                }
+                local index = 0
+                return {
+                    bind = function(self, ...)
+                        return self
+                    end,
+                    step = function(self)
+                        index = index + 1
+                        return rows[index]
+                    end,
+                    reset = function() end,
+                    finalize = function() end,
+                    clearbind = function()
+                        return {
+                            reset = function() end,
+                        }
+                    end,
+                }
+            end
+
+            BookInfoManager.db_conn = nil
+            BookInfoManager.db_created = true
+
+            local result = BookInfoManager:getLibraryEntries("/books/library")
+
+            assert.same({
+                { directory = "/books/library/", filename = "alpha.epub" },
+                { directory = "/books/library/", filename = "beta.epub" },
+                { directory = "/books/library/", filename = "gamma.epub" },
+            }, result)
+        end)
+
+        it("returns a deterministic spread of folder-cover candidates across the full subtree", function()
+            local bound_values
+            local rows = {}
+            for i = 1, 40 do
+                rows[i] = { "/books/library/", string.format("%02d.epub", i) }
+            end
+            mock_conn.prepare = function(self, sql)
+                return {
+                    bind = function(self, ...)
+                        bound_values = { ... }
+                        return self
+                    end,
+                    step = function(self)
+                        return table.remove(rows, 1)
+                    end,
+                    reset = function() end,
+                    finalize = function() end,
+                    clearbind = function()
+                        return {
+                            reset = function() end,
+                        }
+                    end,
+                }
+            end
+            package.loaded["util"].directoryExists = function(path)
+                return path == "/books/library"
+            end
+            package.loaded["util"].fileExists = function(path)
+                return path:match("^/books/library/")
+            end
+            package.loaded["libs/libkoreader-lfs"].attributes = function(path, attr)
+                if attr == "mode" then
+                    return "file"
+                end
+                return nil
+            end
+
+            BookInfoManager.db_conn = nil
+            BookInfoManager.db_created = true
+
+            local result = BookInfoManager:getFolderCoverCandidateFilepaths("/books/library", true)
+
+            assert.equal("/books/library/%", bound_values[1])
+            assert.equal(16, #result)
+            assert.equal("/books/library/01.epub", result[1])
+            assert.equal("/books/library/40.epub", result[#result])
+            assert.is_true(result[2] ~= "/books/library/02.epub")
+        end)
+    end)
+
+    describe("Library revision", function()
+        it("bumps the library revision when book rows are updated or deleted", function()
+            local initial_revision = BookInfoManager:getLibraryRevision()
+
+            BookInfoManager:setBookInfoProperties("/books/update.epub", { ignore_cover = "Y" })
+            local after_update = BookInfoManager:getLibraryRevision()
+
+            BookInfoManager:deleteBookInfo("/books/update.epub")
+            local after_delete = BookInfoManager:getLibraryRevision()
+
+            assert.is_true(after_update > initial_revision)
+            assert.is_true(after_delete > after_update)
         end)
     end)
 

@@ -607,86 +607,7 @@ function ptutil.make_sql_safe(string)
 end
 
 function ptutil.query_cover_paths(folder, include_subfolders)
-    if not util.directoryExists(folder) then return nil end
-
-    -- Reuse BookInfoManager's database connection instead of opening our own
-    BookInfoManager:openDbConnection()
-    local db_conn = BookInfoManager.db_conn
-
-    -- If BookInfoManager connection is unavailable, we can't proceed safely
-    -- (Opening our own connection would leak since we wouldn't track it)
-    if not db_conn then
-        return nil
-    end
-
-    local query
-    local bind_value
-    if include_subfolders then
-        query = string.format([[
-            SELECT directory, filename FROM bookinfo
-            WHERE has_cover = 'Y' AND directory LIKE ? ESCAPE '\'
-            ORDER BY directory ASC, filename ASC LIMIT 64;
-            ]])
-        bind_value = ptutil.escapeLikePattern(folder) .. "/%"
-    else
-        query = string.format([[
-            SELECT directory, filename FROM bookinfo
-            WHERE has_cover = 'Y' AND directory = ?
-            ORDER BY directory ASC, filename ASC LIMIT 64;
-            ]])
-        bind_value = folder .. "/"
-    end
-
-    local stmt = db_conn:prepare(query)
-    stmt:bind(bind_value)
-
-    local directories = {}
-    local filenames = {}
-    while true do
-        local row = stmt:step()
-        if not row then
-            break
-        end
-        table.insert(directories, row[1])
-        table.insert(filenames, row[2])
-    end
-
-    stmt:clearbind():reset()
-    if stmt.finalize then
-        stmt:finalize()
-    elseif stmt.close then
-        stmt:close()
-    end
-
-    if #directories == 0 then
-        return nil
-    end
-
-    -- Don't close - we're reusing BookInfoManager's connection
-    if #filenames <= 16 then
-        return { directories, filenames }
-    end
-
-    -- Keep a bounded, deterministic spread of candidates without forcing SQLite
-    -- to sort the whole subtree randomly.
-    local sampled_directories = {}
-    local sampled_filenames = {}
-    local max_candidates = 16
-    local step = (#filenames - 1) / (max_candidates - 1)
-    local last_index = 0
-    for i = 1, max_candidates do
-        local index = math.floor(((i - 1) * step) + 1.5)
-        if index <= last_index then
-            index = last_index + 1
-        end
-        if index > #filenames then
-            index = #filenames
-        end
-        sampled_directories[#sampled_directories + 1] = directories[index]
-        sampled_filenames[#sampled_filenames + 1] = filenames[index]
-        last_index = index
-    end
-    return { sampled_directories, sampled_filenames }
+    return BookInfoManager:getFolderCoverCandidateFilepaths(folder, include_subfolders)
 end
 
 function ptutil.get_thumbnail_size(max_w, max_h)
@@ -705,13 +626,20 @@ end
 local function collect_cover_filepaths(db_res)
     local filepaths = {}
     if db_res then
-        local directories = db_res[1]
-        local filenames = db_res[2]
-        for i, filename in ipairs(filenames) do
-            local fullpath = directories[i] .. filename
-            if util.fileExists(fullpath) then
-                table.insert(filepaths, fullpath)
+        if type(db_res[1]) == "string" then
+            for _, filepath in ipairs(db_res) do
+                filepaths[#filepaths + 1] = filepath
                 if #filepaths == 4 then break end
+            end
+        else
+            local directories = db_res[1]
+            local filenames = db_res[2]
+            for i, filename in ipairs(filenames) do
+                local fullpath = directories[i] .. filename
+                if util.fileExists(fullpath) then
+                    table.insert(filepaths, fullpath)
+                    if #filepaths == 4 then break end
+                end
             end
         end
     end
@@ -877,7 +805,7 @@ end
 
 function ptutil.getSubfolderCoverImages(filepath, max_w, max_h)
     -- Return nil early if filepath is nil
-    if not filepath then return nil end
+    if not filepath or filepath == "" then return nil end
 
     local cached_filepaths = get_cached_folder_cover(filepath)
     local cover_filepaths = clone_folder_cover_paths(cached_filepaths)

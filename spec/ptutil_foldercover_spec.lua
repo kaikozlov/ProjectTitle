@@ -318,16 +318,17 @@ describe("ptutil Folder Cover Generation", function()
             assert.is_nil(result)
         end)
 
-        it("returns nil when BookInfoManager.openDbConnection does not provide a db connection", function()
-            BookInfoManager_mock.openDbConnection = function() end
-            BookInfoManager_mock.db_conn = nil
+        it("returns nil when BookInfoManager returns no candidate filepaths", function()
+            BookInfoManager_mock.getFolderCoverCandidateFilepaths = function()
+                return nil
+            end
             local result = ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
             assert.is_nil(result)
         end)
 
         it("reuses cached folder-cover selections across different dimensions", function()
             local query_calls = 0
-            local original_query_cover_paths = ptutil.query_cover_paths
+            local original_get_folder_cover_candidate_filepaths = BookInfoManager_mock.getFolderCoverCandidateFilepaths
             local original_getBookInfoBatch = BookInfoManager_mock.getBookInfoBatch
 
             util_mock.directoryExists = function(path)
@@ -336,11 +337,13 @@ describe("ptutil Folder Cover Generation", function()
             util_mock.fileExists = function(path)
                 return path:match("^/books/folder/")
             end
-            ptutil.query_cover_paths = function(folder, include_subfolders)
+            BookInfoManager_mock.getFolderCoverCandidateFilepaths = function(self, folder, include_subfolders)
                 query_calls = query_calls + 1
                 return {
-                    { "/books/folder/", "/books/folder/", "/books/folder/", "/books/folder/" },
-                    { "a.epub", "b.epub", "c.epub", "d.epub" },
+                    "/books/folder/a.epub",
+                    "/books/folder/b.epub",
+                    "/books/folder/c.epub",
+                    "/books/folder/d.epub",
                 }
             end
             BookInfoManager_mock.getBookInfoBatch = function(self, filepaths, get_cover)
@@ -359,7 +362,7 @@ describe("ptutil Folder Cover Generation", function()
             local first = ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
             local second = ptutil.getSubfolderCoverImages("/books/folder", 180, 220)
 
-            ptutil.query_cover_paths = original_query_cover_paths
+            BookInfoManager_mock.getFolderCoverCandidateFilepaths = original_get_folder_cover_candidate_filepaths
             BookInfoManager_mock.getBookInfoBatch = original_getBookInfoBatch
 
             assert.is_not_nil(first)

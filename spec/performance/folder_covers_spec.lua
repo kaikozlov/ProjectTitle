@@ -387,9 +387,10 @@ describe("Folder Cover Generation Optimization", function()
 
         it("hydrates folder-cover selections with getBookInfoBatch", function()
             local batch_calls = 0
-            local original_query_cover_paths = ptutil.query_cover_paths
+            local folder_cover_candidate_calls = 0
             local original_getBookInfo = BookInfoManager.getBookInfo
             local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
+            local original_getFolderCoverCandidateFilepaths = BookInfoManager.getFolderCoverCandidateFilepaths
             local original_getSetting = BookInfoManager.getSetting
             local original_directory_exists = package.loaded["util"].directoryExists
             local original_file_exists = package.loaded["util"].fileExists
@@ -400,14 +401,17 @@ describe("Folder Cover Generation Optimization", function()
             package.loaded["util"].fileExists = function(path)
                 return path:match("^/books/folder/")
             end
-            ptutil.query_cover_paths = function(folder, include_subfolders)
-                return {
-                    { "/books/folder/", "/books/folder/", "/books/folder/", "/books/folder/" },
-                    { "a.epub", "b.epub", "c.epub", "d.epub" },
-                }
-            end
             BookInfoManager.getBookInfo = function()
                 error("expected folder-cover hydration to use getBookInfoBatch")
+            end
+            BookInfoManager.getFolderCoverCandidateFilepaths = function(self, folder, include_subfolders)
+                folder_cover_candidate_calls = folder_cover_candidate_calls + 1
+                return {
+                    "/books/folder/a.epub",
+                    "/books/folder/b.epub",
+                    "/books/folder/c.epub",
+                    "/books/folder/d.epub",
+                }
             end
             BookInfoManager.getBookInfoBatch = function(self, filepaths, get_cover)
                 batch_calls = batch_calls + 1
@@ -427,20 +431,21 @@ describe("Folder Cover Generation Optimization", function()
             ptutil.clearFolderCoverCache()
             local result = ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
 
-            ptutil.query_cover_paths = original_query_cover_paths
             BookInfoManager.getBookInfo = original_getBookInfo
             BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
+            BookInfoManager.getFolderCoverCandidateFilepaths = original_getFolderCoverCandidateFilepaths
             BookInfoManager.getSetting = original_getSetting
             package.loaded["util"].directoryExists = original_directory_exists
             package.loaded["util"].fileExists = original_file_exists
 
             assert.is_not_nil(result)
+            assert.equal(1, folder_cover_candidate_calls)
             assert.equal(1, batch_calls)
         end)
     end)
 
     describe("Query construction", function()
-        it("uses a prepared subtree query with escaped LIKE wildcards", function()
+        it("queries subtree folder-cover candidates through BookInfoManager with escaped LIKE wildcards", function()
             local prepared_sql
             local bound_values
             local exec_calls = 0
@@ -479,7 +484,7 @@ describe("Folder Cover Generation Optimization", function()
                 return path == "/books/100%_semi;quote'"
             end
 
-            ptutil.query_cover_paths("/books/100%_semi;quote'", true)
+            BookInfoManager:getFolderCoverCandidateFilepaths("/books/100%_semi;quote'", true)
 
             assert.equal(0, exec_calls)
             assert.match("LIKE %?", prepared_sql)
@@ -488,7 +493,7 @@ describe("Folder Cover Generation Optimization", function()
             assert.equal("/books/100\\%\\_semi;quote'/%", bound_values[1])
         end)
 
-        it("uses an ordered exact-directory query without RANDOM sorting", function()
+        it("queries exact-directory folder-cover candidates through BookInfoManager without RANDOM sorting", function()
             local prepared_sql
             local bound_values
             local recording_conn = {
@@ -525,7 +530,7 @@ describe("Folder Cover Generation Optimization", function()
                 return path == "/books/folder"
             end
 
-            ptutil.query_cover_paths("/books/folder", false)
+            BookInfoManager:getFolderCoverCandidateFilepaths("/books/folder", false)
 
             assert.is_truthy(prepared_sql)
             assert.is_nil(prepared_sql:match("RANDOM"))

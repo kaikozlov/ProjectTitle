@@ -268,6 +268,7 @@ local function setup_mocks()
             _batch_miss = true,
         },
         getBookInfo = function() return nil end,
+        getFolderCoverCandidateFilepaths = function() return nil end,
         getSetting = function(_, key)
             return mock_bookinfo_settings[key]
         end,

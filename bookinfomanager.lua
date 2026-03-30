@@ -140,6 +140,16 @@ local BOOKINFO_SELECT_COVER_SQL = "SELECT " .. table.concat(BOOKINFO_COLS_SET, "
     "WHERE directory=? AND filename=? AND in_progress=0;"
 local BOOKINFO_IN_PROGRESS_SQL =
 "SELECT in_progress, filename, unsupported FROM bookinfo WHERE directory=? AND filename=?;"
+local BOOKINFO_FOLDER_COVER_DIRECT_SQL = [[
+    SELECT directory, filename FROM bookinfo
+    WHERE in_progress=0 AND has_cover = 'Y' AND directory=?
+    ORDER BY directory ASC, filename ASC;
+]]
+local BOOKINFO_FOLDER_COVER_SUBTREE_SQL = [[
+    SELECT directory, filename FROM bookinfo
+    WHERE in_progress=0 AND has_cover = 'Y' AND directory LIKE ? ESCAPE '\'
+    ORDER BY directory ASC, filename ASC;
+]]
 
 -- We need these _ litterals for them to be made available to translators. the english "string" is
 -- what is inserted in the DB, and it will be translated only when read from the DB and displayed.
@@ -236,6 +246,52 @@ local function clearFolderCoverCache(path_or_directory)
             ptutil.clearFolderCoverCache()
         end
     end
+end
+
+local function finalize_stmt(stmt)
+    if not stmt then
+        return
+    end
+    if stmt.finalize then
+        stmt:finalize()
+    elseif stmt.close then
+        stmt:close()
+    end
+end
+
+local function get_folder_cover_stmt(self, include_subfolders)
+    local stmt_name = include_subfolders and "folder_cover_subtree_stmt" or "folder_cover_direct_stmt"
+    local sql = include_subfolders and BOOKINFO_FOLDER_COVER_SUBTREE_SQL or BOOKINFO_FOLDER_COVER_DIRECT_SQL
+    if not self[stmt_name] then
+        self[stmt_name] = self.db_conn:prepare(sql)
+    end
+    return self[stmt_name]
+end
+
+local function select_spread_filepaths(filepaths, max_candidates)
+    if not filepaths or #filepaths == 0 then
+        return {}
+    end
+    if #filepaths <= max_candidates then
+        return filepaths
+    end
+
+    local selected = {}
+    local step = (#filepaths - 1) / (max_candidates - 1)
+    local last_index = 0
+    for i = 1, max_candidates do
+        local index = math.floor(((i - 1) * step) + 1.5)
+        if index <= last_index then
+            index = last_index + 1
+        end
+        if index > #filepaths then
+            index = #filepaths
+        end
+        selected[#selected + 1] = filepaths[index]
+        last_index = index
+    end
+
+    return selected
 end
 
 -- Cover Cache Management using O(1) LRU cache
@@ -360,10 +416,16 @@ function BookInfoManager:openDbConnection()
     self.get_stmt = self.db_conn:prepare(BOOKINFO_SELECT_META_SQL)
     self.get_cover_stmt = self.db_conn:prepare(BOOKINFO_SELECT_COVER_SQL)
     self.in_progress_stmt = self.db_conn:prepare(BOOKINFO_IN_PROGRESS_SQL)
+    self.folder_cover_direct_stmt = self.db_conn:prepare(BOOKINFO_FOLDER_COVER_DIRECT_SQL)
+    self.folder_cover_subtree_stmt = self.db_conn:prepare(BOOKINFO_FOLDER_COVER_SUBTREE_SQL)
 end
 
 function BookInfoManager:closeDbConnection()
     if self.db_conn then
+        finalize_stmt(self.folder_cover_direct_stmt)
+        finalize_stmt(self.folder_cover_subtree_stmt)
+        self.folder_cover_direct_stmt = nil
+        self.folder_cover_subtree_stmt = nil
         self.db_conn:close()
         self.db_conn = nil
     end
@@ -710,6 +772,45 @@ function BookInfoManager:getDocProps(filepath)
     return bookinfo
 end
 
+function BookInfoManager:getFolderCoverCandidateFilepaths(folder, include_subfolders)
+    if not folder or folder == "" or not util.directoryExists(folder) then
+        return nil
+    end
+
+    self:openDbConnection()
+    if not self.db_conn then
+        return nil
+    end
+
+    local bind_value = folder .. "/"
+    if include_subfolders then
+        local ptutil = require("ptutil")
+        bind_value = ptutil.escapeLikePattern(folder) .. "/%"
+    end
+
+    local stmt = get_folder_cover_stmt(self, include_subfolders)
+    local rows = {}
+    stmt:bind(bind_value)
+
+    while true do
+        local row = stmt:step()
+        if not row then
+            break
+        end
+        local filepath = row[1] .. row[2]
+        if util.fileExists(filepath) then
+            rows[#rows + 1] = filepath
+        end
+    end
+
+    stmt:clearbind():reset()
+
+    if #rows == 0 then
+        return nil
+    end
+
+    return select_spread_filepaths(rows, 16)
+end
 function BookInfoManager:extractBookInfo(filepath, cover_specs)
     local timer = ptdbg:new()
     -- This will be run in a subprocess

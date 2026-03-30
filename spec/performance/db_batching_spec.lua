@@ -310,7 +310,8 @@ describe("Database Query Batching", function()
 
             assert.equal(2, open_count,
                 "Expected one create/open cycle on first use and no extra opens for the second batch")
-            assert.equal(6, prepare_count, "Expected 4 base prepared statements and 1 batch prepare per batch call")
+            assert.equal(8, prepare_count,
+                "Expected 6 base prepared statements, including folder-cover queries, and 1 batch prepare per batch call")
         end)
     end)
 
