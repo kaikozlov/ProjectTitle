@@ -1361,14 +1361,18 @@ function ptutil.estimateFontSize(params)
     return estimated_size
 end
 
--- Widget Pool for reducing widget allocations
--- Pools commonly used widgets like HorizontalSpan, VerticalSpan, FrameContainer
--- to avoid repeated creation and garbage collection overhead
+-- Widget Pool for reducing widget allocations in list/grid layout spacing.
+-- Only simple span widgets are pooled; container widgets need stronger reset
+-- semantics than this helper currently provides.
 local WidgetPool = {}
 WidgetPool.__index = WidgetPool
 
 -- Widget type to constructor mapping
 local widget_constructors = nil -- Lazy-initialized
+local poolable_widget_types = {
+    HorizontalSpan = true,
+    VerticalSpan = true,
+}
 
 local function get_widget_constructors()
     if widget_constructors then return widget_constructors end
@@ -1413,6 +1417,10 @@ end
 -- @param init_params Table of initialization parameters
 -- @return Widget instance
 function WidgetPool:acquire(widget_type, init_params)
+    if not poolable_widget_types[widget_type] then
+        return construct_widget(widget_type, init_params)
+    end
+
     local type_pool = self.pools[widget_type]
 
     if type_pool and #type_pool > 0 then
@@ -1437,6 +1445,9 @@ function WidgetPool:release(widget)
     if not widget then return end
 
     local widget_type = widget._pool_type or widget.name or "unknown"
+    if not poolable_widget_types[widget_type] then
+        return
+    end
 
     -- Initialize pool for this type if needed
     if not self.pools[widget_type] then

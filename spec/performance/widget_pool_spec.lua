@@ -109,6 +109,18 @@ describe("Widget Pool Optimization", function()
             assert.equal(1, pool:getPoolSize("HorizontalSpan"))
             assert.equal(1, pool:getPoolSize("VerticalSpan"))
         end)
+
+        it("does not retain unsupported container widgets for reuse", function()
+            local pool = ptutil.WidgetPool:new()
+            local first = pool:acquire("FrameContainer", { width = 10 })
+
+            pool:release(first)
+
+            assert.equal(0, pool:getPoolSize("FrameContainer"))
+
+            local second = pool:acquire("FrameContainer", { width = 20 })
+            assert.are_not.equal(first, second)
+        end)
     end)
 
     describe("Performance impact", function()
