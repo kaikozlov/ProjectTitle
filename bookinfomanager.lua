@@ -125,7 +125,7 @@ local cover_cache = nil
 
 local function get_cover_cache()
     if not cover_cache then
-        local avg_itemsize = BookInfoManager.max_cover_dimen * BookInfoManager.max_cover_dimen * 4
+        local avg_itemsize = BookInfoManager.max_cover_dimen * BookInfoManager.max_cover_dimen * 2
         cover_cache = Cache:new{
             size = COVER_CACHE_MAX_BYTES,
             avg_itemsize = avg_itemsize,

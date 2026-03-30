@@ -212,6 +212,7 @@ describe("BookInfoManager", function()
     before_each(function()
         folder_cache_clear_count = 0
         folder_cache_invalidations = {}
+        created_cover_caches = {}
     end)
 
     it("initializes and creates the table with correct schema", function()
@@ -609,6 +610,18 @@ describe("BookInfoManager", function()
     end)
 
     describe("Cover cache safety", function()
+        it("sizes the KOReader cover cache with a realistic average cover footprint", function()
+            package.loaded["bookinfomanager"] = nil
+            BookInfoManager = require("bookinfomanager")
+            BookInfoManager:clearCoverCache()
+
+            local cache = created_cover_caches[#created_cover_caches]
+
+            assert.is_table(cache)
+            assert.equal(BookInfoManager.max_cover_dimen * BookInfoManager.max_cover_dimen * 2, cache.avg_itemsize)
+            assert.equal(35, cache.slots)
+        end)
+
         it("stores a clone so later caller mutations do not poison the cache", function()
             local filepath = "/books/cache-safe.epub"
             local original = {
