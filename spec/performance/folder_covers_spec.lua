@@ -417,7 +417,53 @@ describe("Folder Cover Generation Optimization", function()
             assert.equal(0, exec_calls)
             assert.match("LIKE %?", prepared_sql)
             assert.match("ESCAPE", prepared_sql)
+            assert.is_nil(prepared_sql:match("RANDOM"))
             assert.equal("/books/100\\%\\_semi;quote'/%", bound_values[1])
+        end)
+
+        it("uses an ordered exact-directory query without RANDOM sorting", function()
+            local prepared_sql
+            local bound_values
+            local recording_conn = {
+                exec = function()
+                    return nil
+                end,
+                prepare = function(self, sql)
+                    prepared_sql = sql
+                    return {
+                        bind = function(self, ...)
+                            bound_values = { ... }
+                            return self
+                        end,
+                        step = function()
+                            return nil
+                        end,
+                        clearbind = function(self)
+                            return self
+                        end,
+                        reset = function(self)
+                            return self
+                        end,
+                        close = function() end,
+                        finalize = function() end,
+                    }
+                end,
+            }
+
+            BookInfoManager.openDbConnection = function(self)
+                self.db_conn = recording_conn
+            end
+            BookInfoManager.db_conn = recording_conn
+            package.loaded["util"].directoryExists = function(path)
+                return path == "/books/folder"
+            end
+
+            ptutil.query_cover_paths("/books/folder", false)
+
+            assert.is_truthy(prepared_sql)
+            assert.is_nil(prepared_sql:match("RANDOM"))
+            assert.match("ORDER BY", prepared_sql)
+            assert.equal("/books/folder/", bound_values[1])
         end)
     end)
 

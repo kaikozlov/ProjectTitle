@@ -220,6 +220,32 @@ describe("ptutil Folder Cover Generation", function()
             assert.equal(0, scan_calls)
             assert.equal(1, render_calls)
         end)
+
+        it("memoizes explicit cover render failures after the first failed render", function()
+            local render_attempts = 0
+            util_mock.directoryExists = function(path)
+                return path == "/books/folder"
+            end
+            package.loaded["ui/widget/imagewidget"].new = function(self, o)
+                o = o or {}
+                if o.width or o.height then
+                    render_attempts = render_attempts + 1
+                    error("simulated render failure")
+                end
+                o._render = function() end
+                o.getOriginalWidth = function() return 120 end
+                o.getOriginalHeight = function() return 180 end
+                o.free = function() end
+                return o
+            end
+
+            local first = ptutil.getFolderCover("/books/folder", 100, 150, "/books/custom/folder.png")
+            local second = ptutil.getFolderCover("/books/folder", 100, 150, "/books/custom/folder.png")
+
+            assert.is_not_nil(first)
+            assert.is_not_nil(second)
+            assert.equal(1, render_attempts)
+        end)
     end)
 
     describe("getSubfolderCoverImages", function()
@@ -238,6 +264,48 @@ describe("ptutil Folder Cover Generation", function()
             BookInfoManager_mock.db_conn = nil
             local result = ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
             assert.is_nil(result)
+        end)
+
+        it("reuses cached folder-cover selections across different dimensions", function()
+            local query_calls = 0
+            local original_query_cover_paths = ptutil.query_cover_paths
+            local original_getBookInfoBatch = BookInfoManager_mock.getBookInfoBatch
+
+            util_mock.directoryExists = function(path)
+                return path == "/books/folder"
+            end
+            util_mock.fileExists = function(path)
+                return path:match("^/books/folder/")
+            end
+            ptutil.query_cover_paths = function(folder, include_subfolders)
+                query_calls = query_calls + 1
+                return {
+                    { "/books/folder/", "/books/folder/", "/books/folder/", "/books/folder/" },
+                    { "a.epub", "b.epub", "c.epub", "d.epub" },
+                }
+            end
+            BookInfoManager_mock.getBookInfoBatch = function(self, filepaths, get_cover)
+                local results = {}
+                for _, filepath in ipairs(filepaths) do
+                    results[filepath] = {
+                        cover_w = 100,
+                        cover_h = 150,
+                        cover_bb = { filepath = filepath },
+                        has_cover = "Y",
+                    }
+                end
+                return results
+            end
+
+            local first = ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
+            local second = ptutil.getSubfolderCoverImages("/books/folder", 180, 220)
+
+            ptutil.query_cover_paths = original_query_cover_paths
+            BookInfoManager_mock.getBookInfoBatch = original_getBookInfoBatch
+
+            assert.is_not_nil(first)
+            assert.is_not_nil(second)
+            assert.equal(1, query_calls)
         end)
     end)
 

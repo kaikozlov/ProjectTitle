@@ -69,6 +69,7 @@ local BOOKINFO_DB_SCHEMA = [[
         cover_bb_data       BLOB      -- blitbuffer data compressed with zstd
     );
     CREATE UNIQUE INDEX IF NOT EXISTS dir_filename ON bookinfo(directory, filename);
+    CREATE INDEX IF NOT EXISTS has_cover_directory_filename ON bookinfo(has_cover, directory, filename);
 
     -- To keep track of ProjectTitle settings
     CREATE TABLE IF NOT EXISTS config (

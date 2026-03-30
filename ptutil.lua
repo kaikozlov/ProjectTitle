@@ -43,7 +43,7 @@ local ptutil = {}
 -- We intentionally do not cache widget instances or live cover blitbuffers:
 -- widgets are parent-owned, and hydrated cover data should come from the
 -- current BookInfoManager state on each render.
--- Cache key format: "filepath|max_w|max_h"
+-- Cache key format: "filepath"
 local folder_cover_cache = {}
 local FOLDER_COVER_CACHE_SIZE = 50  -- Max cached folder covers
 local explicit_folder_image_cache = {}
@@ -86,27 +86,26 @@ function ptutil.invalidateFolderCoverCache(path_or_directory)
         return
     end
 
-    local cache_prefix = directory .. "|"
     for key, _ in pairs(folder_cover_cache) do
-        if key:sub(1, #cache_prefix) == cache_prefix then
+        if key == directory or key:sub(1, #directory + 1) == (directory .. "|") then
             folder_cover_cache[key] = nil
         end
     end
 end
 
 -- Get cache key for folder cover
-local function get_folder_cache_key(filepath, max_w, max_h)
-    return filepath .. "|" .. tostring(max_w) .. "|" .. tostring(max_h)
+local function get_folder_cache_key(filepath)
+    return filepath
 end
 
 -- Get cached folder cover widget
-local function get_cached_folder_cover(filepath, max_w, max_h)
-    local key = get_folder_cache_key(filepath, max_w, max_h)
+local function get_cached_folder_cover(filepath)
+    local key = get_folder_cache_key(filepath)
     return folder_cover_cache[key]
 end
 
 -- Cache a folder cover widget
-local function cache_folder_cover(filepath, max_w, max_h, widget)
+local function cache_folder_cover(filepath, widget)
     -- Simple size limit - remove oldest entries if over limit
     -- NOTE: We don't call old_widget:free() because it might still be in use
     -- by menu items that haven't been garbage collected yet.
@@ -119,7 +118,7 @@ local function cache_folder_cover(filepath, max_w, max_h, widget)
             break
         end
     end
-    local key = get_folder_cache_key(filepath, max_w, max_h)
+    local key = get_folder_cache_key(filepath)
     folder_cover_cache[key] = widget
 end
 
@@ -160,6 +159,25 @@ end
 
 local function cache_explicit_folder_image_size(folder_image_file, size)
     explicit_folder_image_size_cache[folder_image_file] = size
+end
+
+local function build_broken_folder_cover(max_img_w, max_img_h)
+    local size_mult = 1.25
+    local _, _, scale_factor = BookInfoManager.getCachedCoverSize(250, 500, max_img_w * size_mult,
+        max_img_h * size_mult)
+    return FrameContainer:new {
+        width = max_img_w * size_mult,
+        height = max_img_h * size_mult,
+        margin = 0,
+        padding = 0,
+        bordersize = 0,
+        ImageWidget:new {
+            file = ptutil.getPluginDir() .. "/resources/file-unsupported.svg",
+            alpha = true,
+            scale_factor = scale_factor,
+            original_in_nightmode = false,
+        }
+    }
 end
 
 ptutil.list_defaults = {
@@ -498,29 +516,14 @@ function ptutil.getFolderCover(filepath, max_img_w, max_img_h, pt_cover_path)
                 image_size = size_or_broken
             else
                 image_size = EXPLICIT_FOLDER_IMAGE_BROKEN
+                logger.info(ptdbg.logprefix, "Folder cover found but failed to render, could be too large or broken:",
+                    folder_image_file)
             end
             cache_explicit_folder_image_size(folder_image_file, image_size)
         end
 
         if image_size == EXPLICIT_FOLDER_IMAGE_BROKEN then
-            logger.info(ptdbg.logprefix, "Folder cover found but failed to render, could be too large or broken:",
-                folder_image_file)
-            local size_mult = 1.25
-            local _, _, scale_factor = BookInfoManager.getCachedCoverSize(250, 500, max_img_w * size_mult,
-                max_img_h * size_mult)
-            return FrameContainer:new {
-                width = max_img_w * size_mult,
-                height = max_img_h * size_mult,
-                margin = 0,
-                padding = 0,
-                bordersize = 0,
-                ImageWidget:new {
-                    file = ptutil.getPluginDir() .. "/resources/file-unsupported.svg",
-                    alpha = true,
-                    scale_factor = scale_factor,
-                    original_in_nightmode = false,
-                }
-            }
+            return build_broken_folder_cover(max_img_w, max_img_h)
         end
 
         local success, folder_image = pcall(function()
@@ -553,22 +556,8 @@ function ptutil.getFolderCover(filepath, max_img_w, max_img_h, pt_cover_path)
         else
             logger.info(ptdbg.logprefix, "Folder cover found but failed to render, could be too large or broken:",
                 folder_image_file)
-            local size_mult = 1.25
-            local _, _, scale_factor = BookInfoManager.getCachedCoverSize(250, 500, max_img_w * size_mult,
-                max_img_h * size_mult)
-            return FrameContainer:new {
-                width = max_img_w * size_mult,
-                height = max_img_h * size_mult,
-                margin = 0,
-                padding = 0,
-                bordersize = 0,
-                ImageWidget:new {
-                    file = ptutil.getPluginDir() .. "/resources/file-unsupported.svg",
-                    alpha = true,
-                    scale_factor = scale_factor,
-                    original_in_nightmode = false,
-                }
-            }
+            cache_explicit_folder_image_size(folder_image_file, EXPLICIT_FOLDER_IMAGE_BROKEN)
+            return build_broken_folder_cover(max_img_w, max_img_h)
         end
     else
         return nil
@@ -599,15 +588,15 @@ function ptutil.query_cover_paths(folder, include_subfolders)
     if include_subfolders then
         query = string.format([[
             SELECT directory, filename FROM bookinfo
-            WHERE directory LIKE ? ESCAPE '\' AND has_cover = 'Y'
-            ORDER BY RANDOM() LIMIT 16;
+            WHERE has_cover = 'Y' AND directory LIKE ? ESCAPE '\'
+            ORDER BY directory ASC, filename ASC LIMIT 64;
             ]])
         bind_value = ptutil.escapeLikePattern(folder) .. "/%"
     else
         query = string.format([[
             SELECT directory, filename FROM bookinfo
-            WHERE directory = ? AND has_cover = 'Y'
-            ORDER BY RANDOM() LIMIT 16;
+            WHERE has_cover = 'Y' AND directory = ?
+            ORDER BY directory ASC, filename ASC LIMIT 64;
             ]])
         bind_value = folder .. "/"
     end
@@ -638,7 +627,30 @@ function ptutil.query_cover_paths(folder, include_subfolders)
     end
 
     -- Don't close - we're reusing BookInfoManager's connection
-    return { directories, filenames }
+    if #filenames <= 16 then
+        return { directories, filenames }
+    end
+
+    -- Keep a bounded, deterministic spread of candidates without forcing SQLite
+    -- to sort the whole subtree randomly.
+    local sampled_directories = {}
+    local sampled_filenames = {}
+    local max_candidates = 16
+    local step = (#filenames - 1) / (max_candidates - 1)
+    local last_index = 0
+    for i = 1, max_candidates do
+        local index = math.floor(((i - 1) * step) + 1.5)
+        if index <= last_index then
+            index = last_index + 1
+        end
+        if index > #filenames then
+            index = #filenames
+        end
+        sampled_directories[#sampled_directories + 1] = directories[index]
+        sampled_filenames[#sampled_filenames + 1] = filenames[index]
+        last_index = index
+    end
+    return { sampled_directories, sampled_filenames }
 end
 
 function ptutil.get_thumbnail_size(max_w, max_h)
@@ -831,7 +843,7 @@ function ptutil.getSubfolderCoverImages(filepath, max_w, max_h)
     -- Return nil early if filepath is nil
     if not filepath then return nil end
 
-    local cached_filepaths = get_cached_folder_cover(filepath, max_w, max_h)
+    local cached_filepaths = get_cached_folder_cover(filepath)
     local cover_filepaths = clone_folder_cover_paths(cached_filepaths)
 
     if not cover_filepaths then
@@ -847,7 +859,7 @@ function ptutil.getSubfolderCoverImages(filepath, max_w, max_h)
             return nil
         end
 
-        cache_folder_cover(filepath, max_w, max_h, clone_folder_cover_paths(cover_filepaths))
+        cache_folder_cover(filepath, clone_folder_cover_paths(cover_filepaths))
     end
 
     local cover_entries = hydrate_cover_entries(cover_filepaths)
