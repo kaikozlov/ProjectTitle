@@ -323,6 +323,8 @@ local function select_spread_filepaths(filepaths, max_candidates)
     return selected
 end
 
+local MAX_FOLDER_COVER_SCAN_ROWS = 64
+
 -- Cover Cache Management using O(1) LRU cache
 -- Returns cached bookinfo with cover if available, nil otherwise
 function BookInfoManager:getCachedCover(filepath)
@@ -832,21 +834,25 @@ function BookInfoManager:getFolderCoverCandidateFilepaths(folder, include_subfol
     end
 
     local stmt = get_folder_cover_stmt(self, include_subfolders)
-    local rows = {}
+    local sampled_rows = {}
     stmt:bind(bind_value)
 
-    while true do
+    while #sampled_rows < MAX_FOLDER_COVER_SCAN_ROWS do
         local row = stmt:step()
         if not row then
             break
         end
-        local filepath = row[1] .. row[2]
+        sampled_rows[#sampled_rows + 1] = row[1] .. row[2]
+    end
+
+    stmt:clearbind():reset()
+
+    local rows = {}
+    for _, filepath in ipairs(sampled_rows) do
         if util.fileExists(filepath) then
             rows[#rows + 1] = filepath
         end
     end
-
-    stmt:clearbind():reset()
 
     if #rows == 0 then
         return nil

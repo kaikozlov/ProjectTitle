@@ -537,6 +537,60 @@ describe("BookInfoManager", function()
                 "/books/library/40.epub",
             }, result)
         end)
+
+        it("bounds subtree candidate scanning before filesystem validation", function()
+            local step_calls = 0
+            local file_exists_calls = 0
+            local rows = {}
+            for i = 1, 200 do
+                rows[i] = { "/books/library/", string.format("%03d.epub", i) }
+            end
+            mock_conn.prepare = function(self, sql)
+                return {
+                    bind = function(self, ...)
+                        return self
+                    end,
+                    step = function(self)
+                        step_calls = step_calls + 1
+                        return table.remove(rows, 1)
+                    end,
+                    reset = function() end,
+                    finalize = function() end,
+                    clearbind = function()
+                        return {
+                            reset = function() end,
+                        }
+                    end,
+                }
+            end
+            package.loaded["util"].directoryExists = function(path)
+                return path == "/books/library"
+            end
+            package.loaded["util"].fileExists = function(path)
+                file_exists_calls = file_exists_calls + 1
+                return path:match("^/books/library/")
+            end
+            package.loaded["libs/libkoreader-lfs"].attributes = function(path, attr)
+                if attr == "mode" then
+                    return "file"
+                end
+                return nil
+            end
+
+            BookInfoManager.db_conn = nil
+            BookInfoManager.db_created = true
+
+            local result = BookInfoManager:getFolderCoverCandidateFilepaths("/books/library", true)
+
+            assert.same({
+                "/books/library/001.epub",
+                "/books/library/022.epub",
+                "/books/library/043.epub",
+                "/books/library/064.epub",
+            }, result)
+            assert.equal(64, file_exists_calls)
+            assert.equal(64, step_calls)
+        end)
     end)
 
     describe("Library revision", function()
