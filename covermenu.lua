@@ -286,6 +286,17 @@ function CoverMenu:updateItems(select_number, no_recalculate_dimen)
         self.items_update_action = function()
             logger.dbg(ptdbg.logprefix, "Scheduled items update:", #self.items_to_update, "waiting")
             local is_still_extracting = BookInfoManager:isExtractingInBackground()
+            local pending_filepaths = {}
+            for _, item in ipairs(self.items_to_update) do
+                if item.filepath then
+                    pending_filepaths[#pending_filepaths + 1] = item.filepath
+                end
+            end
+            if #pending_filepaths > 0 then
+                self._bookinfo_batch = BookInfoManager:getBookInfoBatch(pending_filepaths, self._do_cover_images) or {}
+            else
+                self._bookinfo_batch = nil
+            end
             local i = 1
             while i <= #self.items_to_update do -- process and clean in-place
                 local item = self.items_to_update[i]
@@ -309,6 +320,7 @@ function CoverMenu:updateItems(select_number, no_recalculate_dimen)
                     i = i + 1
                 end
             end
+            self._bookinfo_batch = nil
             if #self.items_to_update > 0 then -- re-schedule myself
                 if is_still_extracting then   -- we have still chances to get new stuff
                     logger.dbg(ptdbg.logprefix, "re-scheduling items update:", #self.items_to_update, "still waiting")

@@ -672,6 +672,99 @@ describe("CoverMenu", function()
         end)
     end)
 
+    describe("scheduled refresh batching", function()
+        it("batches pending item refreshes during scheduled updates", function()
+            local batch_calls = 0
+            local scheduled_callback
+            local original_schedule_in = package.loaded["ui/uimanager"].scheduleIn
+            local original_next_tick = package.loaded["ui/uimanager"].nextTick
+            local original_set_dirty = package.loaded["ui/uimanager"].setDirty
+            local original_get_batch = BookInfoManager.getBookInfoBatch
+            local original_is_extracting = BookInfoManager.isExtractingInBackground
+            local original_extract_in_background = BookInfoManager.extractInBackground
+
+            package.loaded["ui/uimanager"].scheduleIn = function(self, delay, callback)
+                scheduled_callback = callback
+            end
+            package.loaded["ui/uimanager"].nextTick = function(self, callback)
+            end
+            package.loaded["ui/uimanager"].setDirty = function() end
+            BookInfoManager.extractInBackground = function()
+                return true
+            end
+            BookInfoManager.isExtractingInBackground = function()
+                return false
+            end
+            BookInfoManager.getBookInfoBatch = function(self, filepaths, do_cover)
+                batch_calls = batch_calls + 1
+                return {
+                    ["/books/one.epub"] = { title = "One" },
+                    ["/books/two.epub"] = { title = "Two" },
+                }
+            end
+
+            local menu = {
+                item_group = {
+                    clear = function() end,
+                },
+                page_info = { resetLayout = function() end },
+                return_button = { resetLayout = function() end },
+                content_group = { resetLayout = function() end },
+                show_parent = {},
+                layout = {},
+                path_items = nil,
+                updatePageInfo = function() end,
+                _recalculateDimen = function() end,
+                _updateItemsBuildUI = function(self)
+                    local item_one = {
+                        filepath = "/books/one.epub",
+                        text = "one",
+                        cover_specs = {},
+                        menu = self,
+                        _has_cover_image = false,
+                        update = function(item)
+                            item.bookinfo_found = item.menu._bookinfo_batch
+                                and item.menu._bookinfo_batch[item.filepath] ~= nil
+                        end,
+                        [1] = { dimen = {} },
+                    }
+                    local item_two = {
+                        filepath = "/books/two.epub",
+                        text = "two",
+                        cover_specs = {},
+                        menu = self,
+                        _has_cover_image = false,
+                        update = function(item)
+                            item.bookinfo_found = item.menu._bookinfo_batch
+                                and item.menu._bookinfo_batch[item.filepath] ~= nil
+                        end,
+                        [1] = { dimen = {} },
+                    }
+                    self.items_to_update = { item_one, item_two }
+                    return 1
+                end,
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+            menu.updatePageInfo = function() end
+
+            menu:updateItems(1, true)
+            assert.is_function(scheduled_callback)
+
+            scheduled_callback()
+
+            package.loaded["ui/uimanager"].scheduleIn = original_schedule_in
+            package.loaded["ui/uimanager"].nextTick = original_next_tick
+            package.loaded["ui/uimanager"].setDirty = original_set_dirty
+            BookInfoManager.getBookInfoBatch = original_get_batch
+            BookInfoManager.isExtractingInBackground = original_is_extracting
+            BookInfoManager.extractInBackground = original_extract_in_background
+
+            assert.equal(1, batch_calls)
+            assert.equal(0, #menu.items_to_update)
+            assert.is_nil(menu._bookinfo_batch)
+        end)
+    end)
+
     describe("setupLayout", function()
         it("creates a TitleBar", function()
             local menu = {
