@@ -404,6 +404,13 @@ function ptutil.findCover(dir_path)
     return nil
 end
 
+function ptutil.escapeLikePattern(value)
+    if value == nil then
+        return nil
+    end
+    return tostring(value):gsub("\\", "\\\\"):gsub("%%", "\\%%"):gsub("_", "\\_")
+end
+
 function ptutil.getFolderCover(filepath, max_img_w, max_img_h, pt_cover_path)
     local folder_image_file = pt_cover_path
 
@@ -486,24 +493,50 @@ function ptutil.query_cover_paths(folder, include_subfolders)
     end
 
     local query
-    local folder_safe = ptutil.make_sql_safe(folder)
+    local bind_value
     if include_subfolders then
         query = string.format([[
             SELECT directory, filename FROM bookinfo
-            WHERE directory LIKE '%s/%%' AND has_cover = 'Y'
+            WHERE directory LIKE ? ESCAPE '\' AND has_cover = 'Y'
             ORDER BY RANDOM() LIMIT 16;
-            ]], folder_safe)
+            ]])
+        bind_value = ptutil.escapeLikePattern(folder) .. "/%"
     else
         query = string.format([[
             SELECT directory, filename FROM bookinfo
-            WHERE directory = '%s/' AND has_cover = 'Y'
+            WHERE directory = ? AND has_cover = 'Y'
             ORDER BY RANDOM() LIMIT 16;
-            ]], folder_safe)
+            ]])
+        bind_value = folder .. "/"
     end
 
-    local res = db_conn:exec(query)
+    local stmt = db_conn:prepare(query)
+    stmt:bind(bind_value)
+
+    local directories = {}
+    local filenames = {}
+    while true do
+        local row = stmt:step()
+        if not row then
+            break
+        end
+        table.insert(directories, row[1])
+        table.insert(filenames, row[2])
+    end
+
+    stmt:clearbind():reset()
+    if stmt.finalize then
+        stmt:finalize()
+    elseif stmt.close then
+        stmt:close()
+    end
+
+    if #directories == 0 then
+        return nil
+    end
+
     -- Don't close - we're reusing BookInfoManager's connection
-    return res
+    return { directories, filenames }
 end
 
 function ptutil.get_thumbnail_size(max_w, max_h)

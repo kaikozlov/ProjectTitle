@@ -148,6 +148,55 @@ describe("Folder Cover Generation Optimization", function()
         end)
     end)
 
+    describe("Query construction", function()
+        it("uses a prepared subtree query with escaped LIKE wildcards", function()
+            local prepared_sql
+            local bound_values
+            local exec_calls = 0
+            local recording_conn = {
+                exec = function()
+                    exec_calls = exec_calls + 1
+                    return nil
+                end,
+                prepare = function(self, sql)
+                    prepared_sql = sql
+                    return {
+                        bind = function(self, ...)
+                            bound_values = { ... }
+                            return self
+                        end,
+                        step = function()
+                            return nil
+                        end,
+                        clearbind = function(self)
+                            return self
+                        end,
+                        reset = function(self)
+                            return self
+                        end,
+                        close = function() end,
+                        finalize = function() end,
+                    }
+                end,
+            }
+
+            BookInfoManager.openDbConnection = function(self)
+                self.db_conn = recording_conn
+            end
+            BookInfoManager.db_conn = recording_conn
+            package.loaded["util"].directoryExists = function(path)
+                return path == "/books/100%_semi;quote'"
+            end
+
+            ptutil.query_cover_paths("/books/100%_semi;quote'", true)
+
+            assert.equal(0, exec_calls)
+            assert.match("LIKE %?", prepared_sql)
+            assert.match("ESCAPE", prepared_sql)
+            assert.equal("/books/100\\%\\_semi;quote'/%", bound_values[1])
+        end)
+    end)
+
     describe("Database connection reuse", function()
         it("clearing the cache forces the next folder-cover render to query again", function()
             local query_calls = 0

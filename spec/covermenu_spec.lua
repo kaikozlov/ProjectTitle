@@ -274,6 +274,78 @@ describe("CoverMenu", function()
             -- All files pass through since they're already in the table
             assert.is_not_nil(result)
         end)
+
+        it("uses a prepared metabrowse query with escaped LIKE wildcards", function()
+            local prepared_sql
+            local bound_values
+            local exec_calls = 0
+            local closed = false
+            package.loaded["lua-ljsqlite3/init"] = {
+                open = function()
+                    return {
+                        set_busy_timeout = function() end,
+                        exec = function()
+                            exec_calls = exec_calls + 1
+                            return nil
+                        end,
+                        prepare = function(self, sql)
+                            prepared_sql = sql
+                            return {
+                                bind = function(self, ...)
+                                    bound_values = { ... }
+                                    return self
+                                end,
+                                step = function()
+                                    return nil
+                                end,
+                                clearbind = function(self)
+                                    return self
+                                end,
+                                reset = function(self)
+                                    return self
+                                end,
+                                close = function() end,
+                                finalize = function() end,
+                            }
+                        end,
+                        close = function()
+                            closed = true
+                        end,
+                    }
+                end,
+            }
+
+            _G.G_reader_settings = {
+                readSetting = function(self, key)
+                    if key == "home_dir" then return "/home/100%_semi;quote'" end
+                    return nil
+                end,
+                isTrue = function() return false end,
+                isFalse = function() return false end,
+            }
+
+            local menu = {
+                show_parent = {},
+                root_path = "/test",
+                onHome = function() end,
+                registerKeyEvents = function() end,
+                file_chooser = { path = "/test" },
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+            menu.title_bar.center_icon_hold_callback()
+            menu.render_context = { is_pathchooser = false }
+
+            local result = menu:genItemTable({}, {}, "/test")
+
+            assert.is_table(result)
+            assert.equal(0, exec_calls)
+            assert.is_true(closed)
+            assert.match("LIKE %?", prepared_sql)
+            assert.match("ESCAPE", prepared_sql)
+            assert.equal("/home/100\\%\\_semi;quote'/%", bound_values[1])
+        end)
     end)
 
     describe("onCloseWidget", function()
