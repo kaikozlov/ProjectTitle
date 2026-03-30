@@ -46,6 +46,10 @@ local ptutil = {}
 -- Cache key format: "filepath|max_w|max_h"
 local folder_cover_cache = {}
 local FOLDER_COVER_CACHE_SIZE = 50  -- Max cached folder covers
+local explicit_folder_image_cache = {}
+local explicit_folder_image_size_cache = {}
+local EXPLICIT_FOLDER_IMAGE_MISS = {}
+local EXPLICIT_FOLDER_IMAGE_BROKEN = {}
 
 -- Clear the folder cover cache (called when menu closes or settings change)
 -- NOTE: We don't call widget:free() here because the widgets might still be
@@ -53,6 +57,8 @@ local FOLDER_COVER_CACHE_SIZE = 50  -- Max cached folder covers
 -- The GC will clean them up when all references are gone.
 function ptutil.clearFolderCoverCache()
     folder_cover_cache = {}
+    explicit_folder_image_cache = {}
+    explicit_folder_image_size_cache = {}
 end
 
 -- Get cache key for folder cover
@@ -93,6 +99,34 @@ local function clone_folder_cover_paths(filepaths)
         clone[i] = filepath
     end
     return clone
+end
+
+local function get_explicit_folder_image_cache_key(filepath, pt_cover_path)
+    return tostring(filepath) .. "|" .. tostring(pt_cover_path or "")
+end
+
+local function get_cached_explicit_folder_image(filepath, pt_cover_path)
+    local cached = explicit_folder_image_cache[get_explicit_folder_image_cache_key(filepath, pt_cover_path)]
+    if cached == nil then
+        return nil, false
+    end
+    if cached == EXPLICIT_FOLDER_IMAGE_MISS then
+        return nil, true
+    end
+    return cached, true
+end
+
+local function cache_explicit_folder_image(filepath, pt_cover_path, folder_image_file)
+    local key = get_explicit_folder_image_cache_key(filepath, pt_cover_path)
+    explicit_folder_image_cache[key] = folder_image_file or EXPLICIT_FOLDER_IMAGE_MISS
+end
+
+local function get_cached_explicit_folder_image_size(folder_image_file)
+    return explicit_folder_image_size_cache[folder_image_file]
+end
+
+local function cache_explicit_folder_image_size(folder_image_file, size)
+    explicit_folder_image_size_cache[folder_image_file] = size
 end
 
 ptutil.list_defaults = {
@@ -409,18 +443,56 @@ function ptutil.escapeLikePattern(value)
 end
 
 function ptutil.getFolderCover(filepath, max_img_w, max_img_h, pt_cover_path)
-    local folder_image_file = pt_cover_path
-
-    if not folder_image_file then
-        folder_image_file = ptutil.findCover(filepath)
+    local folder_image_file, cached = get_cached_explicit_folder_image(filepath, pt_cover_path)
+    if not cached then
+        folder_image_file = pt_cover_path or ptutil.findCover(filepath)
+        cache_explicit_folder_image(filepath, pt_cover_path, folder_image_file)
     end
     if folder_image_file ~= nil then
+        local image_size = get_cached_explicit_folder_image_size(folder_image_file)
+        if image_size == nil then
+            local success, size_or_broken = pcall(function()
+                local temp_image = ImageWidget:new { file = folder_image_file, scale_factor = 1 }
+                temp_image:_render()
+                local size = {
+                    orig_w = temp_image:getOriginalWidth(),
+                    orig_h = temp_image:getOriginalHeight(),
+                }
+                temp_image:free()
+                return size
+            end)
+            if success then
+                image_size = size_or_broken
+            else
+                image_size = EXPLICIT_FOLDER_IMAGE_BROKEN
+            end
+            cache_explicit_folder_image_size(folder_image_file, image_size)
+        end
+
+        if image_size == EXPLICIT_FOLDER_IMAGE_BROKEN then
+            logger.info(ptdbg.logprefix, "Folder cover found but failed to render, could be too large or broken:",
+                folder_image_file)
+            local size_mult = 1.25
+            local _, _, scale_factor = BookInfoManager.getCachedCoverSize(250, 500, max_img_w * size_mult,
+                max_img_h * size_mult)
+            return FrameContainer:new {
+                width = max_img_w * size_mult,
+                height = max_img_h * size_mult,
+                margin = 0,
+                padding = 0,
+                bordersize = 0,
+                ImageWidget:new {
+                    file = ptutil.getPluginDir() .. "/resources/file-unsupported.svg",
+                    alpha = true,
+                    scale_factor = scale_factor,
+                    original_in_nightmode = false,
+                }
+            }
+        end
+
         local success, folder_image = pcall(function()
-            local temp_image = ImageWidget:new { file = folder_image_file, scale_factor = 1 }
-            temp_image:_render()
-            local orig_w = temp_image:getOriginalWidth()
-            local orig_h = temp_image:getOriginalHeight()
-            temp_image:free()
+            local orig_w = image_size.orig_w
+            local orig_h = image_size.orig_h
             local scale_to_fill = 0
             if orig_w and orig_h then
                 local scale_x = max_img_w / orig_w

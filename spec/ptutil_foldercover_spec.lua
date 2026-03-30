@@ -50,6 +50,10 @@ describe("ptutil Folder Cover Generation", function()
         ptutil = require("ptutil")
     end)
 
+    before_each(function()
+        ptutil.clearFolderCoverCache()
+    end)
+
     describe("getFolderCover", function()
         it("returns nil for nil filepath", function()
             local result = ptutil.getFolderCover(nil)
@@ -74,6 +78,148 @@ describe("ptutil Folder Cover Generation", function()
             -- Just verify it doesn't crash
             ptutil.getFolderCover("/books/folder")
         end)
+
+        it("caches discovered folder cover paths across repeated renders", function()
+            local scan_calls = 0
+            util_mock.directoryExists = function(path)
+                return path == "/books/folder"
+            end
+            lfs_mock.dir = function(path)
+                scan_calls = scan_calls + 1
+                local entries = { "cover.jpg" }
+                local idx = 0
+                return function()
+                    idx = idx + 1
+                    return entries[idx]
+                end
+            end
+            package.loaded["ui/widget/imagewidget"].new = function(self, o)
+                o = o or {}
+                o._render = function() end
+                o.getOriginalWidth = function() return 120 end
+                o.getOriginalHeight = function() return 180 end
+                o.free = function() end
+                return o
+            end
+
+            ptutil.getFolderCover("/books/folder", 100, 150)
+            ptutil.getFolderCover("/books/folder", 100, 150)
+
+            assert.equal(1, scan_calls)
+        end)
+
+        it("caches explicit folder cover dimensions across repeated renders", function()
+            local render_calls = 0
+            util_mock.directoryExists = function(path)
+                return path == "/books/folder"
+            end
+            lfs_mock.dir = function(path)
+                local entries = { "cover.jpg" }
+                local idx = 0
+                return function()
+                    idx = idx + 1
+                    return entries[idx]
+                end
+            end
+            package.loaded["ui/widget/imagewidget"].new = function(self, o)
+                o = o or {}
+                o._render = function()
+                    render_calls = render_calls + 1
+                end
+                o.getOriginalWidth = function() return 120 end
+                o.getOriginalHeight = function() return 180 end
+                o.free = function() end
+                return o
+            end
+
+            ptutil.getFolderCover("/books/folder", 100, 150)
+            ptutil.getFolderCover("/books/folder", 100, 150)
+
+            assert.equal(1, render_calls)
+        end)
+
+        it("caches misses for folders without explicit cover images", function()
+            local scan_calls = 0
+            util_mock.directoryExists = function(path)
+                return path == "/books/folder"
+            end
+            lfs_mock.dir = function(path)
+                scan_calls = scan_calls + 1
+                local entries = { "notes.txt", "thumbs.db" }
+                local idx = 0
+                return function()
+                    idx = idx + 1
+                    return entries[idx]
+                end
+            end
+
+            local first = ptutil.getFolderCover("/books/folder", 100, 150)
+            local second = ptutil.getFolderCover("/books/folder", 100, 150)
+
+            assert.is_nil(first)
+            assert.is_nil(second)
+            assert.equal(1, scan_calls)
+        end)
+
+        it("clearing the folder cover cache forces explicit cover rescans", function()
+            local scan_calls = 0
+            util_mock.directoryExists = function(path)
+                return path == "/books/folder"
+            end
+            lfs_mock.dir = function(path)
+                scan_calls = scan_calls + 1
+                local entries = { "cover.jpg" }
+                local idx = 0
+                return function()
+                    idx = idx + 1
+                    return entries[idx]
+                end
+            end
+            package.loaded["ui/widget/imagewidget"].new = function(self, o)
+                o = o or {}
+                o._render = function() end
+                o.getOriginalWidth = function() return 120 end
+                o.getOriginalHeight = function() return 180 end
+                o.free = function() end
+                return o
+            end
+
+            ptutil.getFolderCover("/books/folder", 100, 150)
+            ptutil.clearFolderCoverCache()
+            ptutil.getFolderCover("/books/folder", 100, 150)
+
+            assert.equal(2, scan_calls)
+        end)
+
+        it("bypasses directory scans when pt_cover_path is provided and reuses dimensions", function()
+            local scan_calls = 0
+            local render_calls = 0
+            util_mock.directoryExists = function(path)
+                return path == "/books/folder"
+            end
+            lfs_mock.dir = function(path)
+                scan_calls = scan_calls + 1
+                return function()
+                    return nil
+                end
+            end
+            package.loaded["ui/widget/imagewidget"].new = function(self, o)
+                o = o or {}
+                o._render = function()
+                    render_calls = render_calls + 1
+                end
+                o.getOriginalWidth = function() return 120 end
+                o.getOriginalHeight = function() return 180 end
+                o.free = function() end
+                return o
+            end
+
+            ptutil.getFolderCover("/books/folder", 100, 150, "/books/custom/folder.png")
+            ptutil.getFolderCover("/books/folder", 100, 150, "/books/custom/folder.png")
+
+            assert.equal(0, scan_calls)
+            assert.equal(1, render_calls)
+        end)
     end)
 
     describe("getSubfolderCoverImages", function()
@@ -87,8 +233,9 @@ describe("ptutil Folder Cover Generation", function()
             assert.is_nil(result)
         end)
 
-        it("returns nil when BookInfoManager.conn is nil", function()
-            BookInfoManager_mock.conn = nil
+        it("returns nil when BookInfoManager.openDbConnection does not provide a db connection", function()
+            BookInfoManager_mock.openDbConnection = function() end
+            BookInfoManager_mock.db_conn = nil
             local result = ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
             assert.is_nil(result)
         end)
