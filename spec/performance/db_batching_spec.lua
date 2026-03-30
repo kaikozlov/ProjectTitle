@@ -161,6 +161,45 @@ describe("Database Query Batching", function()
                 BookInfoManager:getBookInfoBatch(filepaths, false)
             end)
         end)
+
+        it("builds a combined batch statement instead of reusing single-file lookup", function()
+            local prepared_sql = {}
+            local recording_conn = {
+                exec = function() return nil end,
+                prepare = function(self, sql)
+                    table.insert(prepared_sql, sql)
+                    return {
+                        bind = function(self, ...) self._bound = { ... }; return self end,
+                        step = function() return nil end,
+                        reset = function(self) return self end,
+                        clearbind = function(self) self._bound = {}; return self end,
+                        close = function() end,
+                        finalize = function() end,
+                    }
+                end,
+                close = function() end,
+                set_busy_timeout = function() end,
+            }
+
+            package.loaded["lua-ljsqlite3/init"] = {
+                open = function() return recording_conn end
+            }
+            package.loaded["bookinfomanager"] = nil
+            BookInfoManager = require("bookinfomanager")
+
+            BookInfoManager:openDbConnection()
+            prepared_sql = {}
+
+            BookInfoManager:getBookInfoBatch({
+                "/books/book1.epub",
+                "/books/book2.epub",
+                "/books/book3.epub",
+            }, false)
+
+            assert.equal(1, #prepared_sql, "Batch lookup should prepare exactly one combined statement")
+            assert.match("WHERE %(", prepared_sql[1])
+            assert.match("OR %(", prepared_sql[1])
+        end)
     end)
 
     describe("Query efficiency", function()

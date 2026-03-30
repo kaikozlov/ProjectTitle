@@ -4,6 +4,7 @@ local mock_ui = require("spec.support.mock_ui")
 describe("ListMenu", function()
     local ListMenu
     local ListMenuItem
+    local BookInfoManager
     
     setup(function()
         mock_ui()
@@ -22,6 +23,7 @@ describe("ListMenu", function()
         -- ListMenu._updateItemsBuildUI uses ListMenuItem.
         
         ListMenu = require("listmenu")
+        BookInfoManager = require("bookinfomanager")
     end)
     
     describe("ListMenu Logic", function()
@@ -47,6 +49,7 @@ describe("ListMenu", function()
         
         it("builds UI items correctly", function()
             local render_context = mock_ui.default_render_context()
+            local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
             local menu = {
                 width = 600,
                 screen_w = 600,
@@ -69,6 +72,19 @@ describe("ListMenu", function()
             }
             -- Mixin ListMenu methods
             for k, v in pairs(ListMenu) do menu[k] = v end
+
+            BookInfoManager.getBookInfoBatch = function(self, filepaths, do_cover)
+                local results = {}
+                for _, filepath in ipairs(filepaths) do
+                    results[filepath] = {
+                        has_cover = false,
+                        cover_fetched = true,
+                        title = "Test Book",
+                        authors = "Test Author",
+                    }
+                end
+                return results
+            end
             
             -- We need to mock ListMenuItem:new because it's local in listmenu.lua
             -- But we can't easily mock a local variable in the module.
@@ -76,6 +92,8 @@ describe("ListMenu", function()
             -- and return a widget structure.
             
             menu:_updateItemsBuildUI()
+
+            BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
             
             assert.is_true(#menu.item_group > 0)
             -- Check if items were added to layout

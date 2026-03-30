@@ -227,6 +227,40 @@ describe("End-to-End Performance", function()
             assert.is_true(batch_query_count >= 1,
                 "Expected at least 1 batch query, got " .. batch_query_count)
         end)
+
+        it("uses batch query for metadata-only list pages", function()
+            local batch_query_count = 0
+
+            local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
+            BookInfoManager.getBookInfoBatch = function(self, filepaths, do_cover)
+                batch_query_count = batch_query_count + 1
+                local results = {}
+                for _, path in ipairs(filepaths) do
+                    results[path] = {
+                        has_cover = false,
+                        cover_fetched = true,
+                        title = "Test Book",
+                        authors = "Test Author",
+                    }
+                end
+                return results
+            end
+
+            local render_context = mock_ui.default_render_context()
+            local menu = create_list_menu({
+                perpage = 7,
+                item_count = 7,
+                render_context = render_context,
+            })
+            menu._do_cover_images = false
+            for k, v in pairs(ListMenu) do menu[k] = v end
+            menu:_updateItemsBuildUI()
+
+            BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
+
+            assert.is_true(batch_query_count >= 1,
+                "Metadata-only list pages should still use batch prefetch")
+        end)
     end)
 
     describe("Memory Efficiency", function()

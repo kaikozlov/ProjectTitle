@@ -178,6 +178,44 @@ local function cloneCachedBookInfo(bookinfo)
     return copy
 end
 
+local function buildBookInfoFromRow(row, get_cover)
+    local bookinfo = {}
+    for num, col in ipairs(BOOKINFO_COLS_SET) do
+        if col == "pages" then
+            -- See http://scilua.org/ljsqlite3.html "SQLite Type Mappings"
+            bookinfo[col] = tonumber(row[num]) -- convert cdata<int64_t> to lua number
+        else
+            bookinfo[col] = row[num]           -- as is
+        end
+        if col == "cover_w" then
+            bookinfo.cover_w = tonumber(row[num])
+            bookinfo.cover_h = tonumber(row[num + 1])
+            if not get_cover then
+                break
+            end
+            bookinfo.cover_bb = nil
+            if bookinfo.has_cover then
+                local bbtype = tonumber(row[num + 2])
+                local bbstride = tonumber(row[num + 3])
+                local cover_blob = row[num + 4]
+                if cover_blob then
+                    local cover_data, cover_size = zstd.zstd_uncompress_ctx(cover_blob[1], cover_blob[2])
+                    local expected_cover_size = bbstride * bookinfo.cover_h
+                    assert(cover_size == expected_cover_size,
+                        "Uncompressed a " ..
+                        tonumber(cover_size) .. "b BB instead of the expected " .. tonumber(expected_cover_size) .. "b")
+                    local cover_bb = Blitbuffer.new(bookinfo.cover_w, bookinfo.cover_h, bbtype, cover_data, bbstride,
+                        bookinfo.cover_w)
+                    cover_bb:setAllocated(1)
+                    bookinfo.cover_bb = cover_bb
+                end
+            end
+            break
+        end
+    end
+    return bookinfo
+end
+
 -- Cover Cache Management using O(1) LRU cache
 -- Returns cached bookinfo with cover if available, nil otherwise
 function BookInfoManager:getCachedCover(filepath)
@@ -533,46 +571,7 @@ function BookInfoManager:getBookInfo(filepath, get_cover)
         return nil
     end
 
-    local bookinfo = {}
-    for num, col in ipairs(BOOKINFO_COLS_SET) do
-        if col == "pages" then
-            -- See http://scilua.org/ljsqlite3.html "SQLite Type Mappings"
-            bookinfo[col] = tonumber(row[num]) -- convert cdata<int64_t> to lua number
-        else
-            bookinfo[col] = row[num]           -- as is
-        end
-        -- specific processing for cover columns
-        if col == "cover_w" then
-            bookinfo["cover_w"] = tonumber(row[num])
-            bookinfo["cover_h"] = tonumber(row[num + 1])
-            if not get_cover then
-                -- don't bother making a blitbuffer
-                break
-            end
-            bookinfo["cover_bb"] = nil
-            if bookinfo["has_cover"] then
-                local bbtype = tonumber(row[num + 2])
-                local bbstride = tonumber(row[num + 3])
-                -- This is a blob_mt table! Essentially, a (ptr, size) tuple.
-                local cover_blob = row[num + 4]
-                -- The pointer returned by SQLite is only valid until the next step/reset/finalize!
-                -- (which means its memory management is entirely in the hands of SQLite)
-                local cover_data, cover_size = zstd.zstd_uncompress_ctx(cover_blob[1], cover_blob[2])
-                -- Double-check that the size of the uncompressed BB is as expected...
-                local expected_cover_size = bbstride * bookinfo["cover_h"]
-                assert(cover_size == expected_cover_size,
-                    "Uncompressed a " ..
-                    tonumber(cover_size) .. "b BB instead of the expected " .. tonumber(expected_cover_size) .. "b")
-                -- That one, on the other hand, is on the heap, so we can use it without making a copy.
-                local cover_bb = Blitbuffer.new(bookinfo["cover_w"], bookinfo["cover_h"], bbtype, cover_data, bbstride,
-                    bookinfo["cover_w"])
-                -- Mark its data pointer as safe to free() on GC
-                cover_bb:setAllocated(1)
-                bookinfo["cover_bb"] = cover_bb
-            end
-            break
-        end
-    end
+    local bookinfo = buildBookInfoFromRow(row, get_cover)
 
     self.get_stmt:clearbind():reset() -- get ready for next query
 
@@ -620,55 +619,38 @@ function BookInfoManager:getBookInfoBatch(filepaths, get_cover)
     -- Open DB connection once for all queries
     self:openDbConnection()
 
-    -- Use the prepared statement for each filepath (same as getBookInfo)
-    -- This correctly handles blob data unlike db_conn:exec()
+    local where_clauses = {}
+    local bind_values = {}
     for _, filepath in ipairs(uncached_paths) do
         local directory, filename = util.splitFilePathName(filepath)
-        local row = self.get_stmt:bind(directory, filename):step()
+        table.insert(where_clauses, "(directory=? AND filename=?)")
+        table.insert(bind_values, directory)
+        table.insert(bind_values, filename)
+    end
 
-        if row then
-            local bookinfo = {}
-            for num, col in ipairs(BOOKINFO_COLS_SET) do
-                if col == "pages" then
-                    bookinfo[col] = tonumber(row[num])
-                else
-                    bookinfo[col] = row[num]
-                end
-                -- specific processing for cover columns
-                if col == "cover_w" then
-                    bookinfo["cover_w"] = tonumber(row[num])
-                    bookinfo["cover_h"] = tonumber(row[num + 1])
-                    if not get_cover then
-                        break
-                    end
-                    bookinfo["cover_bb"] = nil
-                    if bookinfo["has_cover"] then
-                        local bbtype = tonumber(row[num + 2])
-                        local bbstride = tonumber(row[num + 3])
-                        local cover_blob = row[num + 4]
-                        if cover_blob then
-                            local cover_data, cover_size = zstd.zstd_uncompress_ctx(cover_blob[1], cover_blob[2])
-                            local expected_cover_size = bbstride * bookinfo["cover_h"]
-                            if cover_size == expected_cover_size then
-                                local cover_bb = Blitbuffer.new(bookinfo["cover_w"], bookinfo["cover_h"], bbtype, cover_data, bbstride, bookinfo["cover_w"])
-                                cover_bb:setAllocated(1)
-                                bookinfo["cover_bb"] = cover_bb
-                            end
-                        end
-                    end
-                    break
-                end
-            end
+    local batch_sql = "SELECT " .. table.concat(BOOKINFO_COLS_SET, ",") .. " FROM bookinfo WHERE "
+        .. table.concat(where_clauses, " OR ") .. ";"
+    local stmt = self.db_conn:prepare(batch_sql)
+    stmt:bind(table.unpack(bind_values))
 
-            results[filepath] = bookinfo
-
-            -- Cache if we fetched a cover
-            if get_cover and bookinfo.cover_bb then
-                self:cacheCover(filepath, bookinfo)
-            end
+    while true do
+        local row = stmt:step()
+        if not row then
+            break
         end
 
-        self.get_stmt:clearbind():reset()
+        local bookinfo = buildBookInfoFromRow(row, get_cover)
+        local filepath = (bookinfo.directory or "") .. (bookinfo.filename or "")
+        results[filepath] = bookinfo
+
+        if get_cover and bookinfo.cover_bb then
+            self:cacheCover(filepath, bookinfo)
+        end
+    end
+
+    stmt:clearbind():reset()
+    if stmt.finalize then
+        stmt:finalize()
     end
 
     return results

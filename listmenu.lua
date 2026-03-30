@@ -1443,7 +1443,7 @@ function ListMenu:_updateItemsBuildUI()
         end
     end
     local bookinfo_batch = {}
-    if #filepaths > 0 and self._do_cover_images then
+    if #filepaths > 0 then
         bookinfo_batch = BookInfoManager:getBookInfoBatch(filepaths, self._do_cover_images) or {}
     end
     self._bookinfo_batch = bookinfo_batch  -- Store for items to access

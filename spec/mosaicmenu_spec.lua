@@ -3,10 +3,12 @@ local setup_mocks = require("spec.support.mock_ui")
 
 describe("MosaicMenu", function()
     local MosaicMenu
+    local BookInfoManager
     
     setup(function()
         setup_mocks()
         MosaicMenu = require("mosaicmenu")
+        BookInfoManager = require("bookinfomanager")
     end)
     
     describe("MosaicMenu Logic", function()
@@ -32,6 +34,7 @@ describe("MosaicMenu", function()
         end)
         
         it("builds UI items correctly", function()
+            local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
             local menu = {
                 width = 600,
                 screen_w = 600,
@@ -56,8 +59,23 @@ describe("MosaicMenu", function()
             }
             -- Mixin MosaicMenu methods
             for k, v in pairs(MosaicMenu) do menu[k] = v end
+
+            BookInfoManager.getBookInfoBatch = function(self, filepaths, do_cover)
+                local results = {}
+                for _, filepath in ipairs(filepaths) do
+                    results[filepath] = {
+                        has_cover = false,
+                        cover_fetched = true,
+                        title = "Test Book",
+                        authors = "Test Author",
+                    }
+                end
+                return results
+            end
             
             menu:_updateItemsBuildUI()
+
+            BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
             
             assert.is_true(#menu.item_group > 0)
             -- Check if items were added to layout
