@@ -246,6 +246,65 @@ describe("ptutil Folder Cover Generation", function()
             assert.is_not_nil(second)
             assert.equal(1, render_attempts)
         end)
+
+        it("invalidating a folder path clears cached explicit cover discoveries and dimensions", function()
+            local scan_calls = 0
+            local render_calls = 0
+            util_mock.directoryExists = function(path)
+                return path == "/books/folder"
+            end
+            lfs_mock.dir = function(path)
+                scan_calls = scan_calls + 1
+                local entries = { "cover.jpg" }
+                local idx = 0
+                return function()
+                    idx = idx + 1
+                    return entries[idx]
+                end
+            end
+            package.loaded["ui/widget/imagewidget"].new = function(self, o)
+                o = o or {}
+                o._render = function()
+                    render_calls = render_calls + 1
+                end
+                o.getOriginalWidth = function() return 120 end
+                o.getOriginalHeight = function() return 180 end
+                o.free = function() end
+                return o
+            end
+
+            ptutil.getFolderCover("/books/folder", 100, 150)
+            ptutil.invalidateFolderCoverCache("/books/folder")
+            ptutil.getFolderCover("/books/folder", 100, 150)
+
+            assert.equal(2, scan_calls)
+            assert.equal(2, render_calls)
+        end)
+
+        it("invalidating a folder path clears memoized explicit cover render failures", function()
+            local render_attempts = 0
+            util_mock.directoryExists = function(path)
+                return path == "/books/folder"
+            end
+            package.loaded["ui/widget/imagewidget"].new = function(self, o)
+                o = o or {}
+                if o.width or o.height then
+                    render_attempts = render_attempts + 1
+                    error("simulated render failure")
+                end
+                o._render = function() end
+                o.getOriginalWidth = function() return 120 end
+                o.getOriginalHeight = function() return 180 end
+                o.free = function() end
+                return o
+            end
+
+            ptutil.getFolderCover("/books/folder", 100, 150, "/books/custom/folder.png")
+            ptutil.invalidateFolderCoverCache("/books/folder")
+            ptutil.getFolderCover("/books/folder", 100, 150, "/books/custom/folder.png")
+
+            assert.equal(2, render_attempts)
+        end)
     end)
 
     describe("getSubfolderCoverImages", function()

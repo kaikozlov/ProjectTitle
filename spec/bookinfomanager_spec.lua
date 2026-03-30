@@ -5,6 +5,7 @@ describe("BookInfoManager", function()
     local queries = {}
     local mock_conn
     local folder_cache_clear_count = 0
+    local folder_cache_invalidations = {}
 
     setup(function()
         -- Mock dependencies
@@ -101,6 +102,9 @@ describe("BookInfoManager", function()
             clearFolderCoverCache = function()
                 folder_cache_clear_count = folder_cache_clear_count + 1
             end,
+            invalidateFolderCoverCache = function(path)
+                table.insert(folder_cache_invalidations, path)
+            end,
         }
 
         -- Now require the module
@@ -109,6 +113,7 @@ describe("BookInfoManager", function()
 
     before_each(function()
         folder_cache_clear_count = 0
+        folder_cache_invalidations = {}
     end)
 
     it("initializes and creates the table with correct schema", function()
@@ -346,10 +351,11 @@ describe("BookInfoManager", function()
             assert.equal(1, cleared)
         end)
 
-        it("clears folder-cover cache when invalidating one cached cover", function()
+        it("invalidates folder-cover caches for the changed path when invalidating one cached cover", function()
             BookInfoManager:invalidateCachedCover("/books/update.epub")
 
-            assert.equal(1, folder_cache_clear_count)
+            assert.are.same({ "/books/update.epub" }, folder_cache_invalidations)
+            assert.equal(0, folder_cache_clear_count)
         end)
 
         it("clears folder-cover cache when clearing all cached covers", function()

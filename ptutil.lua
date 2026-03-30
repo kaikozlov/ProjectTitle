@@ -51,6 +51,39 @@ local explicit_folder_image_size_cache = {}
 local EXPLICIT_FOLDER_IMAGE_MISS = {}
 local EXPLICIT_FOLDER_IMAGE_BROKEN = {}
 
+local function normalize_directory(path)
+    if not path or path == "" then
+        return path
+    end
+    local normalized = tostring(path):gsub("/+$", "")
+    if normalized == "" then
+        return "/"
+    end
+    return normalized
+end
+
+local function get_directory_ancestors(path_or_directory)
+    local directories = {}
+    local directory = path_or_directory
+    if not util.directoryExists(directory) then
+        directory = util.splitFilePathName(path_or_directory)
+    end
+    directory = normalize_directory(directory)
+    if not directory or directory == "" then
+        return directories
+    end
+
+    while directory do
+        directories[directory] = true
+        if directory == "/" then
+            break
+        end
+        directory = normalize_directory(directory:match("^(.*)/[^/]+$"))
+    end
+
+    return directories
+end
+
 -- Clear the folder cover cache (called when menu closes or settings change)
 -- NOTE: We don't call widget:free() here because the widgets might still be
 -- referenced by menu items that haven't been garbage collected yet.
@@ -66,30 +99,33 @@ function ptutil.invalidateFolderCoverCache(path_or_directory)
         return
     end
 
-    local function normalize_directory(path)
-        if not path or path == "" then
-            return path
-        end
-        local normalized = tostring(path):gsub("/+$", "")
-        if normalized == "" then
-            return "/"
-        end
-        return normalized
-    end
-
-    local directory = path_or_directory
-    if not util.directoryExists(directory) then
-        directory = util.splitFilePathName(path_or_directory)
-    end
-    directory = normalize_directory(directory)
-    if not directory or directory == "" then
+    local directories = get_directory_ancestors(path_or_directory)
+    if next(directories) == nil then
         return
     end
 
     for key, _ in pairs(folder_cover_cache) do
-        if key == directory or key:sub(1, #directory + 1) == (directory .. "|") then
+        if directories[key] then
             folder_cover_cache[key] = nil
         end
+    end
+
+    local removed_explicit_files = {}
+    for key, folder_image_file in pairs(explicit_folder_image_cache) do
+        local folder_path = normalize_directory(key:match("^(.-)|") or "")
+        if directories[folder_path] then
+            if folder_image_file ~= EXPLICIT_FOLDER_IMAGE_MISS then
+                removed_explicit_files[folder_image_file] = true
+            end
+            explicit_folder_image_cache[key] = nil
+        end
+    end
+
+    if explicit_folder_image_size_cache[path_or_directory] ~= nil then
+        explicit_folder_image_size_cache[path_or_directory] = nil
+    end
+    for folder_image_file, _ in pairs(removed_explicit_files) do
+        explicit_folder_image_size_cache[folder_image_file] = nil
     end
 end
 
