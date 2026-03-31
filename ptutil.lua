@@ -338,6 +338,32 @@ ptutil.font_fallbacks = {
 -- Track whether custom fonts are available (checked once on first use)
 local fonts_available = nil
 local Font = nil  -- Lazy-loaded to avoid circular dependency
+local last_known_good_core_face = nil
+local logged_font_failures = {}
+
+local function log_font_failure_once(font_name, err)
+    local key = tostring(font_name) .. "|" .. tostring(err)
+    if logged_font_failures[key] then
+        return
+    end
+    logged_font_failures[key] = true
+    logger.warn(ptdbg.logprefix, "Font lookup failed for", font_name, err)
+end
+
+local function safe_get_face(font_name, size)
+    if not Font then
+        Font = require("ui/font")
+    end
+
+    local ok, face = pcall(function()
+        return Font:getFace(font_name, size)
+    end)
+    if not ok then
+        log_font_failure_once(font_name, face)
+        return nil
+    end
+    return face
+end
 
 -- Check if custom fonts can be loaded (done once, cached)
 local function check_fonts_available()
@@ -351,7 +377,7 @@ local function check_fonts_available()
     end
 
     -- Try to load one of our custom fonts
-    local test_face = Font:getFace(ptutil.good_sans, 16)
+    local test_face = safe_get_face(ptutil.good_sans, 16)
     if test_face then
         fonts_available = true
         logger.info(ptdbg.logprefix, "Custom fonts are available")
@@ -369,14 +395,9 @@ end
 -- @param size The font size
 -- @return A valid font face (never nil)
 function ptutil.getFontFace(font_name, size)
-    -- Lazy-load Font module
-    if not Font then
-        Font = require("ui/font")
-    end
-
     -- If custom fonts are available, use them directly
     if check_fonts_available() then
-        local face = Font:getFace(font_name, size)
+        local face = safe_get_face(font_name, size)
         if face then
             return face
         end
@@ -385,8 +406,9 @@ function ptutil.getFontFace(font_name, size)
     -- Custom fonts not available or failed, try fallback
     local fallback = ptutil.font_fallbacks[font_name]
     if fallback then
-        local face = Font:getFace(fallback, size)
+        local face = safe_get_face(fallback, size)
         if face then
+            last_known_good_core_face = face
             return face
         end
     end
@@ -394,10 +416,16 @@ function ptutil.getFontFace(font_name, size)
     -- Last resort: try common system fonts
     local system_fonts = {"cfont", "infofont", "infont", "tfont"}
     for _, sys_font in ipairs(system_fonts) do
-        local face = Font:getFace(sys_font, size)
+        local face = safe_get_face(sys_font, size)
         if face then
+            last_known_good_core_face = face
             return face
         end
+    end
+
+    if last_known_good_core_face then
+        logger.warn(ptdbg.logprefix, "Reusing last known good core font for:", font_name)
+        return last_known_good_core_face
     end
 
     -- This should never happen, but log it if it does
@@ -408,6 +436,8 @@ end
 -- Reset the font availability check (useful after installing fonts)
 function ptutil.resetFontCheck()
     fonts_available = nil
+    last_known_good_core_face = nil
+    logged_font_failures = {}
 end
 
 -- a non-standard space is used here because it looks nicer

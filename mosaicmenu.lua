@@ -5,7 +5,6 @@ local BottomContainer = require("ui/widget/container/bottomcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
 local DocSettings = require("docsettings")
-local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
@@ -363,7 +362,7 @@ function FakeCover:init()
             end
             title_wg = TextBoxWidget:new {
                 text = title,
-                face = Font:getFace("cfont", math.max(20 - sizedec, 10)),
+                face = ptutil.getFontFace("cfont", math.max(20 - sizedec, 10)),
                 bold = false,
                 width = text_width,
                 alignment = "center",
@@ -384,7 +383,7 @@ function FakeCover:init()
         end
         filesize_wg = TextBoxWidget:new {
             text = filesize,
-            face = Font:getFace("infont", 15),
+            face = ptutil.getFontFace("infont", 15),
             bold = false,
             width = text_width,
             alignment = "center",
@@ -642,7 +641,7 @@ function MosaicMenuItem:update()
 
             local nbitems_text = TextWidget:new {
                 text = " " .. nbitems_string .. " ",
-                face = Font:getFace("infont", 15),
+                face = ptutil.getFontFace("infont", 15),
                 max_width = dimen.w,
                 alignment = "center",
                 padding = Size.padding.tiny,
@@ -712,7 +711,7 @@ function MosaicMenuItem:update()
             }
             local nbitems = TextBoxWidget:new {
                 text = nbitems_string,
-                face = Font:getFace("infont", 15),
+                face = ptutil.getFontFace("infont", 15),
                 width = dimen_in.w,
                 alignment = "center",
             }
@@ -725,7 +724,7 @@ function MosaicMenuItem:update()
                 end
                 directory = TextBoxWidget:new {
                     text = directory_string,
-                    face = Font:getFace("cfont", dir_font_size),
+                    face = ptutil.getFontFace("cfont", dir_font_size),
                     width = dimen_in.w,
                     alignment = "center",
                     bold = true,

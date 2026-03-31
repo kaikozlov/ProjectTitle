@@ -134,6 +134,48 @@ describe("MosaicMenu", function()
             assert.is_true(#menu.layout > 0)
         end)
 
+        it("uses ptutil font fallback in pathchooser folder rendering", function()
+            local ui_font = package.loaded["ui/font"]
+            local original_get_face = ui_font.getFace
+            ui_font.getFace = function()
+                error("raw Font:getFace should not be called here")
+            end
+
+            local render_context = setup_mocks.default_render_context()
+            render_context.is_pathchooser = true
+
+            local menu = {
+                width = 600,
+                screen_w = 600,
+                page = 1,
+                perpage = 6,
+                nb_cols = 3,
+                item_margin = 10,
+                item_table = {
+                    { text = "Folder 1", path = "/books/folder1" },
+                },
+                item_group = {},
+                layout = {},
+                items_to_update = {},
+                itemnumber = 1,
+                getBookInfo = function() return { been_opened = false, status = "unread" } end,
+                item_dimen = { copy = function() return { w = 100, h = 100 } end },
+                inner_dimen = { w = 600, h = 800 },
+                item_width = 100,
+                item_height = 100,
+                render_context = render_context,
+            }
+            for k, v in pairs(MosaicMenu) do menu[k] = v end
+
+            local ok, err = pcall(function()
+                menu:_updateItemsBuildUI()
+            end)
+
+            ui_font.getFace = original_get_face
+
+            assert.is_true(ok, err)
+        end)
+
         it("does not create a cover_info_cache during mosaic rendering", function()
             local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
             local menu = {

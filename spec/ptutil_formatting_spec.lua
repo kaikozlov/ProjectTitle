@@ -291,4 +291,53 @@ describe("ptutil Formatting Functions", function()
             assert.equal("Home", result)
         end)
     end)
+
+    describe("getFontFace", function()
+        it("falls back cleanly when direct font lookup errors", function()
+            local ui_font = package.loaded["ui/font"]
+            local original_get_face = ui_font.getFace
+            ui_font.getFace = function(_, font_name, size)
+                if font_name == ptutil.good_sans or font_name == ptutil.good_serif then
+                    error("font lookup failed")
+                end
+                if font_name == "cfont" then
+                    return { name = font_name, size = size }
+                end
+                return nil
+            end
+
+            ptutil.resetFontCheck()
+            local ok, face = pcall(ptutil.getFontFace, ptutil.good_serif, 18)
+
+            ui_font.getFace = original_get_face
+            ptutil.resetFontCheck()
+
+            assert.is_true(ok)
+            assert.equal("cfont", face.name)
+        end)
+
+        it("reuses the last known good core font when later lookups fail", function()
+            local ui_font = package.loaded["ui/font"]
+            local original_get_face = ui_font.getFace
+            ui_font.getFace = function(_, font_name, size)
+                if font_name == "cfont" then
+                    return { name = font_name, size = size }
+                end
+                return nil
+            end
+
+            ptutil.resetFontCheck()
+            local first_face = ptutil.getFontFace(ptutil.good_serif, 18)
+
+            ui_font.getFace = function() return nil end
+            local second_face = ptutil.getFontFace(ptutil.good_serif, 18)
+
+            ui_font.getFace = original_get_face
+            ptutil.resetFontCheck()
+
+            assert.is_not_nil(first_face)
+            assert.is_not_nil(second_face)
+            assert.equal("cfont", second_face.name)
+        end)
+    end)
 end)
