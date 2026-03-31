@@ -304,6 +304,11 @@ function ProjectTitle:init()
         BookInfoManager:saveSetting("author_series_order", "author_first")
         BookInfoManager:saveSetting("config_version", "8")
     end
+    if BookInfoManager:getSetting("config_version") == 8 then
+        logger.info(ptdbg.logprefix, "Migrating settings to version 9")
+        BookInfoManager:saveSetting("folder_up_requires_hold", false)
+        BookInfoManager:saveSetting("config_version", "9")
+    end
 
     -- restart if needed
     if restart_needed then
@@ -659,6 +664,17 @@ function ProjectTitle:addToMainMenu(menu_items)
                         callback = function()
                             BookInfoManager:toggleSetting("use_custom_sorts")
                             UIManager:askForRestart()
+                        end,
+                    },
+                    {
+                        text = _("Require hold for up-folder button"),
+                        checked_func = function()
+                            return BookInfoManager:getSetting("folder_up_requires_hold")
+                        end,
+                        callback = function()
+                            BookInfoManager:toggleSetting("folder_up_requires_hold")
+                            fc:setupLayout()
+                            fc:updateItems(1, true)
                         end,
                     },
                 },

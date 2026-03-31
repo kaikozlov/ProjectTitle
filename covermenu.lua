@@ -410,6 +410,14 @@ function CoverMenu:genItemTable(dirs, files, path)
 end
 function CoverMenu:setupLayout()
     self.show_parent = self.show_parent or self
+    local folder_up_requires_hold = BookInfoManager:getSetting("folder_up_requires_hold")
+    local folder_up_tap_callback = false
+    local folder_up_hold_callback = false
+    if folder_up_requires_hold then
+        folder_up_hold_callback = function() onFolderUp(self.file_chooser or self) end
+    else
+        folder_up_tap_callback = function() onFolderUp(self.file_chooser or self) end
+    end
     self.title_bar = TitleBar:new {
         show_parent = self.show_parent,
         fullscreen = "true",
@@ -439,8 +447,8 @@ function CoverMenu:setupLayout()
         right3_icon_hold_callback = false,
         -- up folder
         right2_icon = "go_up",
-        right2_icon_tap_callback = function() onFolderUp(self.file_chooser or self) end,
-        right2_icon_hold_callback = false,
+        right2_icon_tap_callback = folder_up_tap_callback,
+        right2_icon_hold_callback = folder_up_hold_callback,
         -- plus menu
         right1_icon = self.selected_files and "check" or "plus",
         right1_icon_tap_callback = function() self:onShowPlusMenu() end,

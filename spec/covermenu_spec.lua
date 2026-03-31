@@ -956,6 +956,31 @@ describe("CoverMenu", function()
             assert.is_function(menu.title_bar.right2_icon_tap_callback)
         end)
 
+        it("can require hold for the up folder button", function()
+            local original_get_setting = BookInfoManager.getSetting
+            BookInfoManager.getSetting = function(_, key)
+                if key == "folder_up_requires_hold" then
+                    return "Y"
+                end
+                return original_get_setting(BookInfoManager, key)
+            end
+
+            local menu = {
+                show_parent = {},
+                root_path = "/test",
+                registerKeyEvents = function() end,
+                file_chooser = { path = "/test" }
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+
+            assert.equal("go_up", menu.title_bar.right2_icon)
+            assert.is_false(menu.title_bar.right2_icon_tap_callback)
+            assert.is_function(menu.title_bar.right2_icon_hold_callback)
+            BookInfoManager.getSetting = original_get_setting
+        end)
+
         it("configures TitleBar with last document button", function()
             local menu = {
                 show_parent = {},

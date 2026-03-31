@@ -195,8 +195,20 @@ describe("Main Settings Migration", function()
         end)
     end)
 
+    describe("Version 8 to 9 migration", function()
+        it("adds folder_up_requires_hold setting", function()
+            BookInfoManager:saveSetting("config_version", "8")
+
+            BookInfoManager:saveSetting("folder_up_requires_hold", false)
+            BookInfoManager:saveSetting("config_version", "9")
+
+            assert.equal("9", BookInfoManager:getSetting("config_version"))
+            assert.is_nil(BookInfoManager:getSetting("folder_up_requires_hold"))
+        end)
+    end)
+
     describe("Full migration path", function()
-        it("successfully migrates from version 1 to version 8", function()
+        it("successfully migrates from version 1 to version 9", function()
             BookInfoManager:saveSetting("config_version", "1")
 
             -- Version 1 → 2
@@ -233,10 +245,15 @@ describe("Main Settings Migration", function()
             BookInfoManager:saveSetting("author_series_order", "author_first")
             BookInfoManager:saveSetting("config_version", "8")
 
-            assert.equal("8", BookInfoManager:getSetting("config_version"))
+            -- Version 8 → 9
+            BookInfoManager:saveSetting("folder_up_requires_hold", false)
+            BookInfoManager:saveSetting("config_version", "9")
+
+            assert.equal("9", BookInfoManager:getSetting("config_version"))
             assert.equal("Y", BookInfoManager:getSetting("show_mosaic_titles"))
             assert.equal("status_and_percent", BookInfoManager:getSetting("progress_text_format"))
             assert.equal("author_first", BookInfoManager:getSetting("author_series_order"))
+            assert.is_nil(BookInfoManager:getSetting("folder_up_requires_hold"))
         end)
     end)
 end)
