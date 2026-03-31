@@ -71,6 +71,15 @@ local function getFooterTextMaxWidth(menu, alignment)
     return math.max(0, available_width)
 end
 
+local function shouldRefreshFooterLive(menu)
+    return BookInfoManager:getSetting("replace_footer_text")
+        and menu
+        and menu._pt_is_pathchooser ~= true
+        and menu.cur_folder_text
+        and type(menu.path) == "string"
+        and menu.path ~= ""
+end
+
 local function onFolderUp(menu)
     if menu and menu._pt_current_path then -- file browser or PathChooser
         local current_path = menu._pt_current_path
@@ -377,6 +386,11 @@ function CoverMenu:onCloseWidget()
         logger.dbg(ptdbg.logprefix, "CoverMenu:onCloseWidget: unscheduling items_update_action")
         UIManager:unschedule(self.items_update_action)
         self.items_update_action = nil
+    end
+    if self.footer_refresh_action then
+        logger.dbg(ptdbg.logprefix, "CoverMenu:onCloseWidget: unscheduling footer_refresh_action")
+        UIManager:unschedule(self.footer_refresh_action)
+        self.footer_refresh_action = nil
     end
 
     -- Propagate a call to free() to all our sub-widgets, to release memory used by their _bb
@@ -731,7 +745,48 @@ function CoverMenu.prepareMenuInit(self)
     self.widget_pool = ptutil.WidgetPool:new({ max_per_type = 30 })
 end
 
+function CoverMenu:scheduleFooterRefresh()
+    if self.footer_refresh_action then
+        UIManager:unschedule(self.footer_refresh_action)
+        self.footer_refresh_action = nil
+    end
+    if not shouldRefreshFooterLive(self) then
+        return
+    end
+
+    local delay = 60 - (os.time() % 60)
+    if delay <= 0 then
+        delay = 60
+    end
+
+    self.footer_refresh_action = function()
+        CoverMenu.refreshFooterText(self)
+        CoverMenu.scheduleFooterRefresh(self)
+    end
+    UIManager:scheduleIn(delay, self.footer_refresh_action)
+end
+
+function CoverMenu:refreshFooterText()
+    if not shouldRefreshFooterLive(self) then
+        return
+    end
+
+    self.cur_folder_text:setMaxWidth(getFooterTextMaxWidth(self, getFooterPageControlsAlignment()))
+    local footertxt = ptutil.formatFooterText(self.footer_config, self._manager, self.path, filemanagerutil.getDefaultDir(),
+        FileManagerShortcuts:hasFolderShortcut(self.path), self._pt_meta_browse_mode)
+    if footertxt == self.cur_folder_text.text then
+        return
+    end
+
+    self.cur_folder_text:setText(footertxt)
+    UIManager:setDirty(self.show_parent, function()
+        return "ui", self._pt_footer_refresh_dimen or self.dimen
+    end)
+end
+
 function CoverMenu.finishMenuInit(self)
+    self.scheduleFooterRefresh = CoverMenu.scheduleFooterRefresh
+    self.refreshFooterText = CoverMenu.refreshFooterText
     -- pagination controls
     self.page_info = HorizontalGroup:new {
         self.page_info_first_chev,
@@ -864,6 +919,12 @@ function CoverMenu.finishMenuInit(self)
         bordersize = 0,
         footer
     }
+    self._pt_footer_refresh_dimen = Geom:new {
+        x = 0,
+        y = self.inner_dimen.h - self.page_info:getSize().h,
+        w = self.inner_dimen.w,
+        h = self.page_info:getSize().h,
+    }
 
     -- test to see what style to draw (pathchooser vs one of our fancy modes)
     -- Use cached value from render_context if available, otherwise compute it
@@ -879,6 +940,7 @@ function CoverMenu.finishMenuInit(self)
     if not self.path_items then -- not FileChooser
         self:updateItems(1, true)
     end
+    self:scheduleFooterRefresh()
 end
 
 function CoverMenu:updatePageInfo(select_number)

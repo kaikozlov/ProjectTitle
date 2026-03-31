@@ -771,6 +771,28 @@ describe("CoverMenu", function()
             assert.is_nil(menu.items_update_action)
         end)
 
+        it("unschedules pending footer refresh actions", function()
+            local unscheduled = false
+            local UIManager = package.loaded["ui/uimanager"]
+            UIManager.unschedule = function(_, action)
+                if action == "footer-refresh" then
+                    unscheduled = true
+                end
+            end
+
+            local menu = {
+                item_group = { free = function() end },
+                footer_refresh_action = "footer-refresh",
+                _covermenu_onclose_done = false
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:onCloseWidget()
+
+            assert.is_true(unscheduled)
+            assert.is_nil(menu.footer_refresh_action)
+        end)
+
         it("frees item_group widgets", function()
             local freed = false
             local menu = {
@@ -927,6 +949,113 @@ describe("CoverMenu", function()
             assert.equal(1, batch_calls)
             assert.equal(0, #menu.items_to_update)
             assert.is_nil(menu._bookinfo_batch)
+        end)
+    end)
+
+    describe("footer refresh scheduling", function()
+        it("schedules live footer refresh when device info footer is enabled", function()
+            local scheduled_delay
+            local scheduled_callback
+            local UIManager = package.loaded["ui/uimanager"]
+            local original_schedule_in = UIManager.scheduleIn
+            local original_get_setting = BookInfoManager.getSetting
+
+            UIManager.scheduleIn = function(_, delay, callback)
+                scheduled_delay = delay
+                scheduled_callback = callback
+            end
+            BookInfoManager.getSetting = function(_, key)
+                if key == "replace_footer_text" then
+                    return true
+                end
+                return original_get_setting(BookInfoManager, key)
+            end
+
+            local menu = {
+                show_parent = {},
+                root_path = "/test",
+                onHome = function() end,
+                registerKeyEvents = function() end,
+                _pt_filechooser_display_mode = "list_image_meta",
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+
+            UIManager.scheduleIn = original_schedule_in
+            BookInfoManager.getSetting = original_get_setting
+
+            assert.is_number(scheduled_delay)
+            assert.is_true(scheduled_delay > 0 and scheduled_delay <= 60)
+            assert.is_function(scheduled_callback)
+            assert.is_not_nil(menu.file_chooser.footer_refresh_action)
+        end)
+
+        it("does not redraw the footer when the refreshed text is unchanged", function()
+            local scheduled_callback
+            local dirty_calls = 0
+            local set_text_calls = 0
+            local UIManager = package.loaded["ui/uimanager"]
+            local ptutil = package.loaded["ptutil"]
+            local filemanagerutil = package.loaded["apps/filemanager/filemanagerutil"]
+            local filemanagershortcuts = package.loaded["apps/filemanager/filemanagershortcuts"]
+            local original_schedule_in = UIManager.scheduleIn
+            local original_set_dirty = UIManager.setDirty
+            local original_format_footer_text = ptutil.formatFooterText
+            local original_get_setting = BookInfoManager.getSetting
+            local original_get_default_dir = filemanagerutil.getDefaultDir
+            local original_has_folder_shortcut = filemanagershortcuts.hasFolderShortcut
+
+            UIManager.scheduleIn = function(_, _, callback)
+                scheduled_callback = callback
+            end
+            UIManager.setDirty = function()
+                dirty_calls = dirty_calls + 1
+            end
+            ptutil.formatFooterText = function()
+                return "Footer"
+            end
+            filemanagerutil.getDefaultDir = function()
+                return "/default"
+            end
+            filemanagershortcuts.hasFolderShortcut = function()
+                return false
+            end
+            BookInfoManager.getSetting = function(_, key)
+                if key == "replace_footer_text" then
+                    return true
+                end
+                return original_get_setting(BookInfoManager, key)
+            end
+
+            local menu = {
+                show_parent = {},
+                root_path = "/test",
+                onHome = function() end,
+                registerKeyEvents = function() end,
+                _pt_filechooser_display_mode = "list_image_meta",
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+            menu.file_chooser.path = "/books"
+            menu.file_chooser.cur_folder_text.text = "Footer"
+            menu.file_chooser.cur_folder_text.setText = function(_, _)
+                set_text_calls = set_text_calls + 1
+            end
+            menu.file_chooser.cur_folder_text.setMaxWidth = function() end
+
+            scheduled_callback()
+
+            UIManager.scheduleIn = original_schedule_in
+            UIManager.setDirty = original_set_dirty
+            ptutil.formatFooterText = original_format_footer_text
+            BookInfoManager.getSetting = original_get_setting
+            filemanagerutil.getDefaultDir = original_get_default_dir
+            filemanagershortcuts.hasFolderShortcut = original_has_folder_shortcut
+
+            assert.equal(0, set_text_calls)
+            assert.equal(0, dirty_calls)
         end)
     end)
 
