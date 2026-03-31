@@ -315,6 +315,15 @@ function ProjectTitle:init()
         BookInfoManager:saveSetting("footer_page_controls_alignment", footer_page_controls_alignment)
         BookInfoManager:saveSetting("config_version", "10")
     end
+    if BookInfoManager:getSetting("config_version") == 10 then
+        logger.info(ptdbg.logprefix, "Migrating settings to version 11")
+        BookInfoManager:saveSetting("footer_show_clock", true)
+        BookInfoManager:saveSetting("footer_show_wifi", true)
+        BookInfoManager:saveSetting("footer_show_battery", true)
+        BookInfoManager:saveSetting("footer_show_frontlight", true)
+        BookInfoManager:saveSetting("footer_show_frontlight_warmth", true)
+        BookInfoManager:saveSetting("config_version", "11")
+    end
 
     -- restart if needed
     if restart_needed then
@@ -872,6 +881,61 @@ function ProjectTitle:addToMainMenu(menu_items)
                                 radio = true,
                                 callback = function()
                                     BookInfoManager:saveSetting("footer_page_controls_alignment", "center")
+                                    UIManager:askForRestart()
+                                end,
+                            },
+                        },
+                    },
+                    {
+                        text = _("Device info items"),
+                        sub_item_table = {
+                            {
+                                text = _("Clock"),
+                                checked_func = function()
+                                    return BookInfoManager:getSetting("footer_show_clock")
+                                end,
+                                callback = function()
+                                    BookInfoManager:toggleSetting("footer_show_clock")
+                                    UIManager:askForRestart()
+                                end,
+                            },
+                            {
+                                text = _("Wi-Fi"),
+                                checked_func = function()
+                                    return BookInfoManager:getSetting("footer_show_wifi")
+                                end,
+                                callback = function()
+                                    BookInfoManager:toggleSetting("footer_show_wifi")
+                                    UIManager:askForRestart()
+                                end,
+                            },
+                            {
+                                text = _("Battery"),
+                                checked_func = function()
+                                    return BookInfoManager:getSetting("footer_show_battery")
+                                end,
+                                callback = function()
+                                    BookInfoManager:toggleSetting("footer_show_battery")
+                                    UIManager:askForRestart()
+                                end,
+                            },
+                            {
+                                text = _("Frontlight"),
+                                checked_func = function()
+                                    return BookInfoManager:getSetting("footer_show_frontlight")
+                                end,
+                                callback = function()
+                                    BookInfoManager:toggleSetting("footer_show_frontlight")
+                                    UIManager:askForRestart()
+                                end,
+                            },
+                            {
+                                text = _("Warmth"),
+                                checked_func = function()
+                                    return BookInfoManager:getSetting("footer_show_frontlight_warmth")
+                                end,
+                                callback = function()
+                                    BookInfoManager:toggleSetting("footer_show_frontlight_warmth")
                                     UIManager:askForRestart()
                                 end,
                             },

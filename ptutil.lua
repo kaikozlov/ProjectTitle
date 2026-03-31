@@ -1895,6 +1895,14 @@ function ptutil.formatFooterText(footer_config, _manager, path, fm_default_dir, 
             wifi_show_disabled = true,
             frontlight_show_off = true,
         }
+        local config_version = tonumber(BookInfoManager:getSetting("config_version") or 0)
+        local function footer_item_enabled(setting_key)
+            local value = BookInfoManager:getSetting(setting_key)
+            if config_version < 11 and value == nil then
+                return true
+            end
+            return value ~= nil
+        end
         local genItemText = {
             battery = function()
                 if Device:hasBattery() then
@@ -1951,8 +1959,14 @@ function ptutil.formatFooterText(footer_config, _manager, path, fm_default_dir, 
         local device_statuses = {}
         local alt_footer = nil
         for _, item in ipairs(config.order) do
-            local text = genItemText[item]()
-            if text then table.insert(device_statuses, text) end
+            local setting_key = "footer_show_" .. item
+            if item == "frontlight_warmth" then
+                setting_key = "footer_show_frontlight_warmth"
+            end
+            if footer_item_enabled(setting_key) then
+                local text = genItemText[item]()
+                if text then table.insert(device_statuses, text) end
+            end
         end
         if #device_statuses > 0 then alt_footer = table.concat(device_statuses, ptutil.separator.dot) end
         if _manager and type(_manager.name) == "string" then

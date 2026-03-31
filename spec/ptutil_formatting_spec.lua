@@ -231,16 +231,30 @@ describe("ptutil Formatting Functions", function()
         local BookInfoManager
         local original_read_setting
         local original_nil_or_true
+        local original_is_true
+        local Device
+        local original_network_manager
+        local original_datetime
+        local original_bd_wrap
 
         setup(function()
             BookInfoManager = require("bookinfomanager")
             original_read_setting = G_reader_settings.readSetting
             original_nil_or_true = G_reader_settings.nilOrTrue
+            original_is_true = G_reader_settings.isTrue
+            Device = package.loaded["device"]
+            original_network_manager = package.loaded["ui/network/manager"]
+            original_datetime = package.loaded["datetime"]
+            original_bd_wrap = package.loaded["ui/bidi"].wrap
         end)
 
         teardown(function()
             G_reader_settings.readSetting = original_read_setting
             G_reader_settings.nilOrTrue = original_nil_or_true
+            G_reader_settings.isTrue = original_is_true
+            package.loaded["ui/network/manager"] = original_network_manager
+            package.loaded["datetime"] = original_datetime
+            package.loaded["ui/bidi"].wrap = original_bd_wrap
         end)
 
         it("shows Home for the configured home directory", function()
@@ -289,6 +303,76 @@ describe("ptutil Formatting Functions", function()
             local result = ptutil.formatFooterText(nil, nil, "/mnt/us", "/mnt/us", false, false)
 
             assert.equal("Home", result)
+        end)
+
+        it("shows only enabled device info items", function()
+            BookInfoManager:saveSetting("config_version", "11")
+            BookInfoManager:saveSetting("replace_footer_text", true)
+            BookInfoManager:saveSetting("footer_show_clock", false)
+            BookInfoManager:saveSetting("footer_show_wifi", false)
+            BookInfoManager:saveSetting("footer_show_battery", true)
+            BookInfoManager:saveSetting("footer_show_frontlight", false)
+            BookInfoManager:saveSetting("footer_show_frontlight_warmth", false)
+
+            package.loaded["ui/bidi"].wrap = function(text) return text end
+            package.loaded["datetime"] = {
+                secondsToHour = function() return "10:30" end,
+            }
+            G_reader_settings.isTrue = function() return false end
+            package.loaded["ui/network/manager"] = {
+                isWifiOn = function() return false end,
+            }
+            Device.hasBattery = function() return true end
+            Device.hasAuxBattery = function() return false end
+            Device.hasFrontlight = function() return false end
+            Device.hasNaturalLight = function() return false end
+            Device.getPowerDevice = function()
+                return {
+                    getCapacity = function() return 50 end,
+                    getBatterySymbol = function() return "B" end,
+                    isCharged = function() return false end,
+                    isCharging = function() return false end,
+                }
+            end
+
+            local result = ptutil.formatFooterText(nil, nil, "/mnt/us", "/mnt/us", false, false)
+
+            assert.equal("B50%", result)
+        end)
+
+        it("preserves the fixed item order while omitting disabled items", function()
+            BookInfoManager:saveSetting("config_version", "11")
+            BookInfoManager:saveSetting("replace_footer_text", true)
+            BookInfoManager:saveSetting("footer_show_clock", true)
+            BookInfoManager:saveSetting("footer_show_wifi", false)
+            BookInfoManager:saveSetting("footer_show_battery", true)
+            BookInfoManager:saveSetting("footer_show_frontlight", false)
+            BookInfoManager:saveSetting("footer_show_frontlight_warmth", false)
+
+            package.loaded["ui/bidi"].wrap = function(text) return text end
+            package.loaded["datetime"] = {
+                secondsToHour = function() return "10:30" end,
+            }
+            G_reader_settings.isTrue = function() return false end
+            package.loaded["ui/network/manager"] = {
+                isWifiOn = function() return false end,
+            }
+            Device.hasBattery = function() return true end
+            Device.hasAuxBattery = function() return false end
+            Device.hasFrontlight = function() return false end
+            Device.hasNaturalLight = function() return false end
+            Device.getPowerDevice = function()
+                return {
+                    getCapacity = function() return 50 end,
+                    getBatterySymbol = function() return "B" end,
+                    isCharged = function() return false end,
+                    isCharging = function() return false end,
+                }
+            end
+
+            local result = ptutil.formatFooterText(nil, nil, "/mnt/us", "/mnt/us", false, false)
+
+            assert.equal("10:30" .. ptutil.separator.dot .. "B50%", result)
         end)
     end)
 
