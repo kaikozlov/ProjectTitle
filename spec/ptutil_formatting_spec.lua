@@ -136,6 +136,21 @@ describe("ptutil Formatting Functions", function()
             assert.is_string(result)
         end)
 
+        it("formats semicolon-separated tags when newlines are absent", function()
+            local result = ptutil.formatTags("fiction; science ;adventure")
+            assert.equal("fiction" .. ptutil.separator.bullet .. "science" .. ptutil.separator.bullet .. "adventure", result)
+        end)
+
+        it("formats comma-separated tags when newlines and semicolons are absent", function()
+            local result = ptutil.formatTags("fiction, science ,adventure")
+            assert.equal("fiction" .. ptutil.separator.bullet .. "science" .. ptutil.separator.bullet .. "adventure", result)
+        end)
+
+        it("prefers newline separators over commas in mixed input", function()
+            local result = ptutil.formatTags("fiction, science\nadventure")
+            assert.equal("fiction, science" .. ptutil.separator.bullet .. "adventure", result)
+        end)
+
         it("formats tags with limit", function()
             local result = ptutil.formatTags("fiction\nscience\nadventure\nmystery\nthriller", 3)
             assert.is_not_nil(result)

@@ -86,6 +86,12 @@ describe("String Allocation Optimization", function()
             assert.truthy(result:find("fantasy"))
         end)
 
+        it("formatTags normalizes semicolon separators", function()
+            local result = ptutil.formatTags("fiction; fantasy ; dragons", 10)
+            assert.is_string(result)
+            assert.equal("fiction" .. ptutil.separator.bullet .. "fantasy" .. ptutil.separator.bullet .. "dragons", result)
+        end)
+
         it("formatTags limits tags to specified count", function()
             local result = ptutil.formatTags("a\nb\nc\nd\ne", 2)
             assert.is_string(result)

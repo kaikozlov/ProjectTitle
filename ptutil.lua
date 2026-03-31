@@ -989,13 +989,47 @@ function ptutil.formatAuthorSeries(authors, series, series_mode, show_tags)
     return formatted_author_series
 end
 
+local function trim_keyword(keyword)
+    return keyword:match("^%s*(.-)%s*$")
+end
+
+function ptutil.normalizeKeywords(keywords)
+    if not keywords or keywords == "" then
+        return nil
+    end
+
+    local delimiter = "\n"
+    if not keywords:find(delimiter, 1, true) then
+        if keywords:find(";", 1, true) then
+            delimiter = ";"
+        elseif keywords:find(",", 1, true) then
+            delimiter = ","
+        end
+    end
+
+    local normalized = {}
+    for _, keyword in ipairs(util.splitToArray(keywords, delimiter)) do
+        local trimmed = trim_keyword(keyword)
+        if trimmed ~= "" then
+            normalized[#normalized + 1] = trimmed
+        end
+    end
+
+    if #normalized == 0 then
+        return nil
+    end
+
+    return normalized
+end
+
 -- Format tags/keywords coming from calibre/bookinfo.keywords
 -- Expect keywords as newline-separated values. Return a compact
 -- single-line string limited to `tags_limit` items or nil if no tags.
 function ptutil.formatTags(keywords, tags_limit)
     if not keywords or keywords == "" then return nil end
     local final_tags_list = {}
-    local full_list = util.splitToArray(keywords, "\n")
+    local full_list = ptutil.normalizeKeywords(keywords)
+    if not full_list then return nil end
     local nb_tags = #full_list
     if nb_tags == 0 then return nil end
     tags_limit = tags_limit or 9999
