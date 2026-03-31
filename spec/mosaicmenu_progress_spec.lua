@@ -9,6 +9,9 @@ describe("MosaicMenu Progress Indicators", function()
     
     setup(function()
         mock_ui()
+        package.loaded["document/documentregistry"] = {
+            isImageFile = function() return false end,
+        }
         
         -- Force reload of mosaicmenu to pick up mocked T
         package.loaded["mosaicmenu"] = nil

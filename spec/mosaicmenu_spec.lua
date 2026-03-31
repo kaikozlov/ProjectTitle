@@ -24,6 +24,9 @@ describe("MosaicMenu", function()
         package.loaded["mosaicmenu"] = nil
         package.loaded["document/documentregistry"] = {
             hasProvider = function() return true end,
+            isImageFile = function(_, filepath)
+                return filepath and filepath:match("%.png$")
+            end,
             getProvider = function() return {} end,
             openDocument = function() return nil end,
         }
@@ -64,6 +67,26 @@ describe("MosaicMenu", function()
     end)
     
     describe("MosaicMenu Logic", function()
+        local function has_widget_named(node, name)
+            if type(node) ~= "table" then
+                return false
+            end
+            if node.name == name then
+                return true
+            end
+            for _, child in ipairs(node.children or {}) do
+                if has_widget_named(child, name) then
+                    return true
+                end
+            end
+            for i = 1, #node do
+                if has_widget_named(node[i], name) then
+                    return true
+                end
+            end
+            return false
+        end
+
         it("recalculates dimensions correctly", function()
             local menu = {
                 inner_dimen = { w = 600, h = 800 },
@@ -174,6 +197,36 @@ describe("MosaicMenu", function()
             ui_font.getFace = original_get_face
 
             assert.is_true(ok, err)
+        end)
+
+        it("shows image previews for image files in pathchooser mode", function()
+            local render_context = setup_mocks.default_render_context()
+            render_context.is_pathchooser = true
+
+            local item = MosaicMenuItem:new {
+                width = 100,
+                height = 140,
+                entry = { text = "cover.png", file = "/chooser/cover.png", path = "/chooser/cover.png", is_file = true },
+                text = "cover.png",
+                show_parent = {},
+                mandatory = "1 MB",
+                dimen = { x = 0, y = 0, w = 100, h = 140, copy = function(self) return { x = self.x, y = self.y, w = self.w, h = self.h } end },
+                menu = {
+                    render_context = render_context,
+                    getBookInfo = function()
+                        return { been_opened = false, status = "unread" }
+                    end,
+                    _bookinfo_batch = {
+                        ["/chooser/cover.png"] = {
+                            _no_provider = true,
+                        },
+                    },
+                },
+                do_cover_image = false,
+                do_hint_opened = false,
+            }
+
+            assert.is_true(has_widget_named(item._underline_container[1], "ImageWidget"))
         end)
 
         it("does not create a cover_info_cache during mosaic rendering", function()

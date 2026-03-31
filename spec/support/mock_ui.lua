@@ -277,6 +277,13 @@ local function setup_mocks()
     package.loaded["docsettings"] = {
         hasSidecarFile = function() return false end
     }
+
+    package.loaded["document/documentregistry"] = {
+        hasProvider = function() return true end,
+        isImageFile = function() return false end,
+        getProvider = function() return {} end,
+        openDocument = function() return nil end,
+    }
     
     package.loaded["optmath"] = {
         round = function(n) return math.floor(n + 0.5) end

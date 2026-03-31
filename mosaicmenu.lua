@@ -5,6 +5,7 @@ local BottomContainer = require("ui/widget/container/bottomcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
 local DocSettings = require("docsettings")
+local DocumentRegistry = require("document/documentregistry")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
@@ -1081,19 +1082,37 @@ function MosaicMenuItem:update()
                 self.bookinfo_found = true
             end
             local filesize = self.mandatory or ""
-            widget = CenterContainer:new {
-                dimen = dimen,
-                FakeCover:new {
-                    width = dimen.w,
-                    height = dimen.h,
-                    bordersize = border_size,
-                    filename = self.text,
-                    filename_add = "\n" .. filesize,
-                    initial_sizedec = 4, -- start with a smaller font when filenames only
-                    file_deleted = self.file_deleted,
-                    is_pathchooser = self.is_pathchooser,
+            if self.filepath and DocumentRegistry:isImageFile(self.filepath) then
+                widget = CenterContainer:new {
+                    dimen = dimen,
+                    FrameContainer:new {
+                        width = dimen.w,
+                        height = dimen.h,
+                        margin = 0,
+                        padding = 0,
+                        bordersize = border_size,
+                        ImageWidget:new {
+                            file = self.filepath,
+                            width = max_img_w,
+                            height = max_img_h,
+                        },
+                    }
                 }
-            }
+            else
+                widget = CenterContainer:new {
+                    dimen = dimen,
+                    FakeCover:new {
+                        width = dimen.w,
+                        height = dimen.h,
+                        bordersize = border_size,
+                        filename = self.text,
+                        filename_add = "\n" .. filesize,
+                        initial_sizedec = 4, -- start with a smaller font when filenames only
+                        file_deleted = self.file_deleted,
+                        is_pathchooser = self.is_pathchooser,
+                    }
+                }
+            end
             self.cover_area = {
                 width = dimen.w,
                 height = dimen.h,

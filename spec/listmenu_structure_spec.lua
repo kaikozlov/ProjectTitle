@@ -6,6 +6,9 @@ describe("ListMenu Structure", function()
     
     setup(function()
         mock_ui()
+        package.loaded["document/documentregistry"] = {
+            isImageFile = function() return false end,
+        }
         ListMenu = require("listmenu")
     end)
     

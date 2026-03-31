@@ -24,6 +24,9 @@ describe("ListMenu", function()
             package.loaded["listmenu"] = nil
             package.loaded["document/documentregistry"] = {
                 hasProvider = function() return true end,
+                isImageFile = function(_, filepath)
+                    return filepath and filepath:match("%.png$")
+                end,
                 getProvider = function() return {} end,
                 openDocument = function() return nil end,
             }
@@ -78,6 +81,26 @@ describe("ListMenu", function()
 	    end)
     
     describe("ListMenu Logic", function()
+        local function has_widget_named(node, name)
+            if type(node) ~= "table" then
+                return false
+            end
+            if node.name == name then
+                return true
+            end
+            for _, child in ipairs(node.children or {}) do
+                if has_widget_named(child, name) then
+                    return true
+                end
+            end
+            for i = 1, #node do
+                if has_widget_named(node[i], name) then
+                    return true
+                end
+            end
+            return false
+        end
+
         it("recalculates dimensions correctly in portrait", function()
             local menu = {
                 inner_dimen = { w = 600, h = 800 },
@@ -376,6 +399,39 @@ describe("ListMenu", function()
 
             assert.is_true(pathchooser_item.is_pathchooser)
             assert.is_false(browser_item.is_pathchooser)
+        end)
+
+        it("shows image previews for image files in pathchooser mode", function()
+            local item = ListMenuItem:new {
+                height = 48,
+                width = 240,
+                entry = { text = "cover.png", file = "/chooser/cover.png", path = "/chooser/cover.png", is_file = true },
+                text = "cover.png",
+                show_parent = {},
+                mandatory = "1 MB",
+                dimen = { x = 0, y = 0, w = 240, h = 48, copy = function(self) return { x = self.x, y = self.y, w = self.w, h = self.h } end },
+                menu = {
+                    render_context = {
+                        is_pathchooser = true,
+                        is_touch_device = true,
+                        force_focus_indicator = false,
+                        disable_auto_foldercovers = true,
+                    },
+                    getBookInfo = function()
+                        return { been_opened = false, status = "unread" }
+                    end,
+                    _bookinfo_batch = {
+                        ["/chooser/cover.png"] = {
+                            _no_provider = true,
+                        },
+                    },
+                },
+                do_cover_image = false,
+                do_filename_only = false,
+                do_hint_opened = false,
+            }
+
+            assert.is_true(has_widget_named(item._underline_container[1], "ImageWidget"))
         end)
 
         it("prefetches only file entries for the page batch", function()

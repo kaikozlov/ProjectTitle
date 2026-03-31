@@ -4,6 +4,7 @@ local BottomContainer = require("ui/widget/container/bottomcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
 local DocSettings = require("docsettings")
+local DocumentRegistry = require("document/documentregistry")
 local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
@@ -1136,6 +1137,8 @@ function ListMenuItem:update()
             local wright_width = 0
             local wright_items = { align = "right" }
             local pad_width = Screen:scaleBySize(10) -- on the left, in between, and on the right
+            local image_preview
+            local image_preview_width = 0
 
             local wmandatory = TextWidget:new {
                 text = self.mandatory or "",
@@ -1153,7 +1156,23 @@ function ListMenuItem:update()
                 }
             end
 
-            local wleft_width = dimen.w - dimen.h - wright_width - 3 * pad_width
+            if self.filepath and DocumentRegistry:isImageFile(self.filepath) then
+                image_preview_width = dimen.h - 2 * Screen:scaleBySize(6)
+                image_preview = FrameContainer:new {
+                    width = image_preview_width,
+                    height = image_preview_width,
+                    margin = 0,
+                    padding = 0,
+                    bordersize = 0,
+                    ImageWidget:new {
+                        file = self.filepath,
+                        width = image_preview_width,
+                        height = image_preview_width,
+                    },
+                }
+            end
+
+            local wleft_width = dimen.w - wright_width - 3 * pad_width - image_preview_width
             local wlefttext = BD.filename(self.text)
             local filefont = ptutil.good_sans
             local wleft = TextBoxWidget:new {
@@ -1167,13 +1186,19 @@ function ListMenuItem:update()
                 height_overflow_show_ellipsis = true,
             }
 
+            local left_items = {
+                HorizontalSpan:new { width = Screen:scaleBySize(5) },
+            }
+            if image_preview then
+                table.insert(left_items, image_preview)
+                table.insert(left_items, HorizontalSpan:new { width = pad_width })
+            end
+            table.insert(left_items, wleft)
+
             widget = OverlapGroup:new {
                 LeftContainer:new {
                     dimen = dimen:copy(),
-                    HorizontalGroup:new {
-                        HorizontalSpan:new { width = Screen:scaleBySize(5) },
-                        wleft,
-                    }
+                    HorizontalGroup:new(left_items)
                 },
                 RightContainer:new {
                     dimen = dimen:copy(),
