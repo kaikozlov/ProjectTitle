@@ -309,6 +309,12 @@ function ProjectTitle:init()
         BookInfoManager:saveSetting("folder_up_requires_hold", false)
         BookInfoManager:saveSetting("config_version", "9")
     end
+    if BookInfoManager:getSetting("config_version") == 9 then
+        logger.info(ptdbg.logprefix, "Migrating settings to version 10")
+        local footer_page_controls_alignment = BookInfoManager:getSetting("reverse_footer") and "left" or "right"
+        BookInfoManager:saveSetting("footer_page_controls_alignment", footer_page_controls_alignment)
+        BookInfoManager:saveSetting("config_version", "10")
+    end
 
     -- restart if needed
     if restart_needed then
@@ -834,12 +840,42 @@ function ProjectTitle:addToMainMenu(menu_items)
                         end,
                     },
                     {
-                        text = _("Show page controls in left corner"),
-                        checked_func = function() return BookInfoManager:getSetting("reverse_footer") end,
-                        callback = function()
-                            BookInfoManager:toggleSetting("reverse_footer")
-                            UIManager:askForRestart()
-                        end,
+                        text = _("Page controls position"),
+                        sub_item_table = {
+                            {
+                                text = _("Right"),
+                                checked_func = function()
+                                    return BookInfoManager:getSetting("footer_page_controls_alignment") == "right"
+                                end,
+                                radio = true,
+                                callback = function()
+                                    BookInfoManager:saveSetting("footer_page_controls_alignment", "right")
+                                    UIManager:askForRestart()
+                                end,
+                            },
+                            {
+                                text = _("Left"),
+                                checked_func = function()
+                                    return BookInfoManager:getSetting("footer_page_controls_alignment") == "left"
+                                end,
+                                radio = true,
+                                callback = function()
+                                    BookInfoManager:saveSetting("footer_page_controls_alignment", "left")
+                                    UIManager:askForRestart()
+                                end,
+                            },
+                            {
+                                text = _("Center"),
+                                checked_func = function()
+                                    return BookInfoManager:getSetting("footer_page_controls_alignment") == "center"
+                                end,
+                                radio = true,
+                                callback = function()
+                                    BookInfoManager:saveSetting("footer_page_controls_alignment", "center")
+                                    UIManager:askForRestart()
+                                end,
+                            },
+                        },
                     },
                 },
             },

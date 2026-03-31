@@ -3,6 +3,7 @@ local Blitbuffer = require("ffi/blitbuffer")
 local BottomContainer = require("ui/widget/container/bottomcontainer")
 local BookList = require("ui/widget/booklist")
 local ButtonDialog = require("ui/widget/buttondialog")
+local CenterContainer = require("ui/widget/container/centercontainer")
 local DocumentRegistry = require("document/documentregistry")
 local FileChooser = require("ui/widget/filechooser")
 local Geom = require("ui/geometry")
@@ -53,6 +54,22 @@ local ptdbg = require("ptdbg")
 -- Do some collectgarbage() every few drawings
 local NB_DRAWINGS_BETWEEN_COLLECTGARBAGE = 5
 local nb_drawings_since_last_collectgarbage = 0
+
+local function getFooterPageControlsAlignment()
+    local alignment = BookInfoManager:getSetting("footer_page_controls_alignment")
+    if alignment == "left" or alignment == "center" or alignment == "right" then
+        return alignment
+    end
+    return BookInfoManager:getSetting("reverse_footer") and "left" or "right"
+end
+
+local function getFooterTextMaxWidth(menu, alignment)
+    local available_width = (menu.screen_w * 0.94) - menu.page_info:getSize().w
+    if alignment == "center" then
+        available_width = ((menu.screen_w * 0.94) - menu.page_info:getSize().w) / 2
+    end
+    return math.max(0, available_width)
+end
 
 local function onFolderUp(menu)
     if menu and menu._pt_current_path then -- file browser or PathChooser
@@ -728,17 +745,24 @@ function CoverMenu.finishMenuInit(self)
         w = self.screen_w * 0.98, -- 98% instead of 94% here due to whitespace on chevrons
         h = self.page_info:getSize().h,
     }
-    if not BookInfoManager:getSetting("reverse_footer") then
+    local footer_alignment = getFooterPageControlsAlignment()
+    if footer_alignment == "right" then
         page_info_container = RightContainer:new {
             dimen = page_info_geom,
             self.page_info,
         }
-    else
+    elseif footer_alignment == "left" then
         page_info_container = LeftContainer:new {
             dimen = page_info_geom,
             self.page_info,
         }
+    else
+        page_info_container = CenterContainer:new {
+            dimen = page_info_geom,
+            self.page_info,
+        }
     end
+    self._pt_page_info_container = page_info_container
     local page_controls = BottomContainer:new {
         dimen = self.inner_dimen:copy(),
         page_info_container
@@ -757,11 +781,12 @@ function CoverMenu.finishMenuInit(self)
         footer_font_face = ptutil.good_sans
         footer_font_size = ptutil.footer_defaults.font_size_deviceinfo
     end
-    if not BookInfoManager:getSetting("reverse_footer") then
+    local footer_text_max_width = getFooterTextMaxWidth(self, footer_alignment)
+    if footer_alignment ~= "left" then
         self.cur_folder_text = TextWidget:new {
             text = text,
             face = ptutil.getFontFace(footer_font_face, footer_font_size),
-            max_width = (self.screen_w * 0.94) - self.page_info:getSize().w, -- pagination_width,
+            max_width = footer_text_max_width,
             truncate_with_ellipsis = true,
             truncate_left = true,
         }
@@ -773,7 +798,7 @@ function CoverMenu.finishMenuInit(self)
         self.cur_folder_text = TextWidget:new {
             text = text,
             face = ptutil.getFontFace(footer_font_face, footer_font_size),
-            max_width = (self.screen_w * 0.94) - self.page_info:getSize().w, -- pagination_width,
+            max_width = footer_text_max_width,
             truncate_with_ellipsis = true,
         }
         cur_folder_container = RightContainer:new {
@@ -793,7 +818,7 @@ function CoverMenu.finishMenuInit(self)
         w = self.screen_w * 0.94,
         h = self.page_return_arrow:getSize().h,
     }
-    if not BookInfoManager:getSetting("reverse_footer") then
+    if footer_alignment ~= "left" then
         page_return = BottomContainer:new {
             dimen = self.inner_dimen:copy(),
             LeftContainer:new {
@@ -873,7 +898,7 @@ function CoverMenu:updatePageInfo(select_number)
     end
 
     if not is_pathchooser and self.cur_folder_text and type(self.path) == "string" and self.path ~= '' then
-        self.cur_folder_text:setMaxWidth(self.screen_w * 0.94 - self.page_info:getSize().w)
+        self.cur_folder_text:setMaxWidth(getFooterTextMaxWidth(self, getFooterPageControlsAlignment()))
         local footertxt = ptutil.formatFooterText(self.footer_config, self._manager, self.path, filemanagerutil.getDefaultDir(),
                                         FileManagerShortcuts:hasFolderShortcut(self.path), G_reader_settings:readSetting("show_flat_view"))
         self.cur_folder_text:setText(footertxt)

@@ -529,6 +529,56 @@ describe("CoverMenu", function()
             assert.equal(CoverMenu.updateItems, menu.file_chooser.updateItems)
             assert.equal("list_image_meta", menu._pt_filechooser_display_mode)
         end)
+
+        it("uses left-aligned page controls when configured", function()
+            local original_get_setting = BookInfoManager.getSetting
+            BookInfoManager.getSetting = function(_, key)
+                if key == "footer_page_controls_alignment" then
+                    return "left"
+                end
+                return original_get_setting(BookInfoManager, key)
+            end
+
+            local menu = {
+                show_parent = {},
+                root_path = "/test",
+                onHome = function() end,
+                registerKeyEvents = function() end,
+                _pt_filechooser_display_mode = "list_image_meta",
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+
+            BookInfoManager.getSetting = original_get_setting
+
+            assert.equal("LeftContainer", menu.file_chooser._pt_page_info_container.name)
+        end)
+
+        it("uses centered page controls when configured", function()
+            local original_get_setting = BookInfoManager.getSetting
+            BookInfoManager.getSetting = function(_, key)
+                if key == "footer_page_controls_alignment" then
+                    return "center"
+                end
+                return original_get_setting(BookInfoManager, key)
+            end
+
+            local menu = {
+                show_parent = {},
+                root_path = "/test",
+                onHome = function() end,
+                registerKeyEvents = function() end,
+                _pt_filechooser_display_mode = "list_image_meta",
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+
+            BookInfoManager.getSetting = original_get_setting
+
+            assert.equal("CenterContainer", menu.file_chooser._pt_page_info_container.name)
+        end)
     end)
 
     describe("instance-scoped session state", function()

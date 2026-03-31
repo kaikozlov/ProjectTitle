@@ -207,8 +207,22 @@ describe("Main Settings Migration", function()
         end)
     end)
 
+    describe("Version 9 to 10 migration", function()
+        it("migrates footer alignment from reverse_footer", function()
+            BookInfoManager:saveSetting("config_version", "9")
+            BookInfoManager:saveSetting("reverse_footer", true)
+
+            local footer_page_controls_alignment = BookInfoManager:getSetting("reverse_footer") and "left" or "right"
+            BookInfoManager:saveSetting("footer_page_controls_alignment", footer_page_controls_alignment)
+            BookInfoManager:saveSetting("config_version", "10")
+
+            assert.equal("10", BookInfoManager:getSetting("config_version"))
+            assert.equal("left", BookInfoManager:getSetting("footer_page_controls_alignment"))
+        end)
+    end)
+
     describe("Full migration path", function()
-        it("successfully migrates from version 1 to version 9", function()
+        it("successfully migrates from version 1 to version 10", function()
             BookInfoManager:saveSetting("config_version", "1")
 
             -- Version 1 → 2
@@ -249,11 +263,16 @@ describe("Main Settings Migration", function()
             BookInfoManager:saveSetting("folder_up_requires_hold", false)
             BookInfoManager:saveSetting("config_version", "9")
 
-            assert.equal("9", BookInfoManager:getSetting("config_version"))
+            -- Version 9 → 10
+            BookInfoManager:saveSetting("footer_page_controls_alignment", "right")
+            BookInfoManager:saveSetting("config_version", "10")
+
+            assert.equal("10", BookInfoManager:getSetting("config_version"))
             assert.equal("Y", BookInfoManager:getSetting("show_mosaic_titles"))
             assert.equal("status_and_percent", BookInfoManager:getSetting("progress_text_format"))
             assert.equal("author_first", BookInfoManager:getSetting("author_series_order"))
             assert.is_nil(BookInfoManager:getSetting("folder_up_requires_hold"))
+            assert.equal("right", BookInfoManager:getSetting("footer_page_controls_alignment"))
         end)
     end)
 end)

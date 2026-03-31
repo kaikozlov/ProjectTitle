@@ -405,12 +405,15 @@ describe("Main Display Mode Switching", function()
     end)
 
     describe("Footer settings", function()
-        it("stores reverse_footer setting", function()
-            BookInfoManager:saveSetting("reverse_footer", true)
-            assert.equal("Y", BookInfoManager:getSetting("reverse_footer"))
+        it("stores footer_page_controls_alignment setting", function()
+            BookInfoManager:saveSetting("footer_page_controls_alignment", "left")
+            assert.equal("left", BookInfoManager:getSetting("footer_page_controls_alignment"))
 
-            BookInfoManager:saveSetting("reverse_footer", false)
-            assert.is_nil(BookInfoManager:getSetting("reverse_footer"))
+            BookInfoManager:saveSetting("footer_page_controls_alignment", "center")
+            assert.equal("center", BookInfoManager:getSetting("footer_page_controls_alignment"))
+
+            BookInfoManager:saveSetting("footer_page_controls_alignment", "right")
+            assert.equal("right", BookInfoManager:getSetting("footer_page_controls_alignment"))
         end)
 
         it("stores replace_footer_text setting", function()
