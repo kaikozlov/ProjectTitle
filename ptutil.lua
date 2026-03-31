@@ -1891,9 +1891,10 @@ function ptutil.formatFooterText(footer_config, _manager, path, fm_default_dir, 
         end
     else
         local display_path = ""
-        if (path == fm_default_dir or
-                            path == G_reader_settings:readSetting("home_dir")) and
-                            G_reader_settings:nilOrTrue("shorten_home_dir") then
+        local home_dir = G_reader_settings:readSetting("home_dir") or fm_default_dir
+        if home_dir
+            and G_reader_settings:nilOrTrue("shorten_home_dir")
+            and (path == home_dir or path == home_dir .. "/") then
             display_path = _("Home")
         elseif _manager and type(_manager.name) == "string" then
             display_path = ""

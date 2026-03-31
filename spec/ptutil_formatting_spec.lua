@@ -201,4 +201,69 @@ describe("ptutil Formatting Functions", function()
             assert.is_false(ptutil.isPathChooser(obj))
         end)
     end)
+
+    describe("formatFooterText", function()
+        local BookInfoManager
+        local original_read_setting
+        local original_nil_or_true
+
+        setup(function()
+            BookInfoManager = require("bookinfomanager")
+            original_read_setting = G_reader_settings.readSetting
+            original_nil_or_true = G_reader_settings.nilOrTrue
+        end)
+
+        teardown(function()
+            G_reader_settings.readSetting = original_read_setting
+            G_reader_settings.nilOrTrue = original_nil_or_true
+        end)
+
+        it("shows Home for the configured home directory", function()
+            BookInfoManager:saveSetting("replace_footer_text", false)
+            G_reader_settings.readSetting = function(_, key)
+                if key == "home_dir" then
+                    return "/mnt/us/books"
+                end
+                return nil
+            end
+            G_reader_settings.nilOrTrue = function(_, key)
+                return key == "shorten_home_dir"
+            end
+
+            local result = ptutil.formatFooterText(nil, nil, "/mnt/us/books", "/mnt/us", false, false)
+
+            assert.equal("Home", result)
+        end)
+
+        it("does not show Home for the default directory when a custom home is configured", function()
+            BookInfoManager:saveSetting("replace_footer_text", false)
+            G_reader_settings.readSetting = function(_, key)
+                if key == "home_dir" then
+                    return "/mnt/us/books"
+                end
+                return nil
+            end
+            G_reader_settings.nilOrTrue = function(_, key)
+                return key == "shorten_home_dir"
+            end
+
+            local result = ptutil.formatFooterText(nil, nil, "/mnt/us", "/mnt/us", false, false)
+
+            assert.equal("us", result)
+        end)
+
+        it("falls back to the default directory as Home when no custom home is configured", function()
+            BookInfoManager:saveSetting("replace_footer_text", false)
+            G_reader_settings.readSetting = function()
+                return nil
+            end
+            G_reader_settings.nilOrTrue = function(_, key)
+                return key == "shorten_home_dir"
+            end
+
+            local result = ptutil.formatFooterText(nil, nil, "/mnt/us", "/mnt/us", false, false)
+
+            assert.equal("Home", result)
+        end)
+    end)
 end)
