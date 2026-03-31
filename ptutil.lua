@@ -965,8 +965,9 @@ function ptutil.formatSeriesIndex(series_index)
     return formatted_series_index
 end
 
-function ptutil.formatAuthorSeries(authors, series, series_mode, show_tags)
+function ptutil.formatAuthorSeries(authors, series, series_mode, show_tags, author_series_order)
     local formatted_author_series = ""
+    author_series_order = author_series_order or "author_first"
     if authors == nil or authors == "" then
         if series_mode == "series_in_separate_line" and series ~= "" then
             formatted_author_series = series
@@ -977,10 +978,16 @@ function ptutil.formatAuthorSeries(authors, series, series_mode, show_tags)
             authors = table.concat(authors_list, ptutil.separator.comma)
         end
         if series_mode == "series_in_separate_line" and series ~= "" then
+            local first = authors
+            local second = series
+            if author_series_order == "series_first" then
+                first = series
+                second = authors
+            end
             if show_tags then
-                formatted_author_series = authors .. ptutil.separator.dot .. series
+                formatted_author_series = first .. ptutil.separator.dot .. second
             else
-                formatted_author_series = authors .. "\n" .. series
+                formatted_author_series = first .. "\n" .. second
             end
         else
             formatted_author_series = authors

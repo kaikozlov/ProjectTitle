@@ -183,8 +183,20 @@ describe("Main Settings Migration", function()
         end)
     end)
 
+    describe("Version 7 to 8 migration", function()
+        it("adds author_series_order setting", function()
+            BookInfoManager:saveSetting("config_version", "7")
+
+            BookInfoManager:saveSetting("author_series_order", "author_first")
+            BookInfoManager:saveSetting("config_version", "8")
+
+            assert.equal("8", BookInfoManager:getSetting("config_version"))
+            assert.equal("author_first", BookInfoManager:getSetting("author_series_order"))
+        end)
+    end)
+
     describe("Full migration path", function()
-        it("successfully migrates from version 1 to version 7", function()
+        it("successfully migrates from version 1 to version 8", function()
             BookInfoManager:saveSetting("config_version", "1")
 
             -- Version 1 → 2
@@ -217,9 +229,14 @@ describe("Main Settings Migration", function()
             BookInfoManager:saveSetting("show_mosaic_titles", true)
             BookInfoManager:saveSetting("config_version", "7")
 
-            assert.equal("7", BookInfoManager:getSetting("config_version"))
+            -- Version 7 → 8
+            BookInfoManager:saveSetting("author_series_order", "author_first")
+            BookInfoManager:saveSetting("config_version", "8")
+
+            assert.equal("8", BookInfoManager:getSetting("config_version"))
             assert.equal("Y", BookInfoManager:getSetting("show_mosaic_titles"))
             assert.equal("status_and_percent", BookInfoManager:getSetting("progress_text_format"))
+            assert.equal("author_first", BookInfoManager:getSetting("author_series_order"))
         end)
     end)
 end)

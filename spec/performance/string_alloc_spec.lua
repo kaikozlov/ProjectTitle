@@ -126,6 +126,11 @@ describe("String Allocation Optimization", function()
             -- When authors is empty but series exists, returns series
             assert.equal("#1 - Series", result)
         end)
+
+        it("formatAuthorSeries supports series-first ordering", function()
+            local result = ptutil.formatAuthorSeries("John Doe", "#1 - Series", "series_in_separate_line", false, "series_first")
+            assert.equal("#1 - Series\nJohn Doe", result)
+        end)
     end)
 
     describe("String patterns", function()

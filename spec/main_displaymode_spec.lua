@@ -394,6 +394,14 @@ describe("Main Display Mode Switching", function()
             BookInfoManager:saveSetting("opened_at_top_of_library", false)
             assert.is_nil(BookInfoManager:getSetting("opened_at_top_of_library"))
         end)
+
+        it("stores author_series_order setting", function()
+            BookInfoManager:saveSetting("author_series_order", "author_first")
+            assert.equal("author_first", BookInfoManager:getSetting("author_series_order"))
+
+            BookInfoManager:saveSetting("author_series_order", "series_first")
+            assert.equal("series_first", BookInfoManager:getSetting("author_series_order"))
+        end)
     end)
 
     describe("Footer settings", function()

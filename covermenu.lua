@@ -145,6 +145,7 @@ function CoverMenu:buildRenderContext()
         show_mosaic_titles = BookInfoManager:getSetting("show_mosaic_titles"),
         progress_text_format = BookInfoManager:getSetting("progress_text_format") or "status_and_percent",
         series_mode = BookInfoManager:getSetting("series_mode"),
+        author_series_order = BookInfoManager:getSetting("author_series_order") or "author_first",
         show_tags = BookInfoManager:getSetting("show_tags"),
         show_name_grid_folders = BookInfoManager:getSetting("show_name_grid_folders"),
         -- Folder cover settings

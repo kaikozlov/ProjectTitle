@@ -167,6 +167,7 @@ function AltBookStatusWidget:genBookInfoGroup()
 
     -- series name and position (if available, if requested)
     local series_mode = BookInfoManager:getSetting("series_mode")
+    local author_series_order = BookInfoManager:getSetting("author_series_order") or "author_first"
     local show_series = props.series and props.series_index
     local series
     if show_series then
@@ -178,7 +179,7 @@ function AltBookStatusWidget:genBookInfoGroup()
     end
 
     -- combine author and series
-    local author_series_text = ptutil.formatAuthorSeries(authors, series, series_mode, false)
+    local author_series_text = ptutil.formatAuthorSeries(authors, series, series_mode, false, author_series_order)
 
     -- author(s) and series combined box
     local author_series = TextBoxWidget:new {

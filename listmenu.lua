@@ -825,7 +825,8 @@ function ListMenuItem:update()
             end
 
             -- merge series and authors into a single string (may contain linebreaks)
-            author_series = ptutil.formatAuthorSeries(authors, series, series_mode, show_tags)
+            author_series = ptutil.formatAuthorSeries(authors, series, series_mode, show_tags,
+                self.menu.render_context.author_series_order)
 
             -- tags
             if show_tags then

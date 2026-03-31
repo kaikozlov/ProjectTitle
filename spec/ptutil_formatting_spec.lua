@@ -104,6 +104,16 @@ describe("ptutil Formatting Functions", function()
             assert.match("Great Series #1", result)
         end)
 
+        it("can place series before authors when configured", function()
+            local result = ptutil.formatAuthorSeries("John Doe", "Great Series #1", "series_in_separate_line", false, "series_first")
+            assert.equal("Great Series #1\nJohn Doe", result)
+        end)
+
+        it("can place series before authors when tags are shown", function()
+            local result = ptutil.formatAuthorSeries("John Doe\nJane Smith", "Great Series #1", "series_in_separate_line", true, "series_first")
+            assert.equal("Great Series #1" .. ptutil.separator.dot .. "John Doe, Jane Smith", result)
+        end)
+
         it("handles empty authors string", function()
             local result = ptutil.formatAuthorSeries("", "Great Series #1", "series_in_separate_line")
             assert.equal("Great Series #1", result)

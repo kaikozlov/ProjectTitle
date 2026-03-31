@@ -157,6 +157,7 @@ local curr_display_modes = {
 }
 local _widget_update_item_table_funcs = {}
 local series_mode = nil  -- defaults to not display series
+local author_series_order = "author_first"
 
 local ProjectTitle = WidgetContainer:extend {
     name = "projecttitle",
@@ -298,6 +299,11 @@ function ProjectTitle:init()
         BookInfoManager:saveSetting("show_mosaic_titles", true)
         BookInfoManager:saveSetting("config_version", "7")
     end
+    if BookInfoManager:getSetting("config_version") == 7 then
+        logger.info(ptdbg.logprefix, "Migrating settings to version 8")
+        BookInfoManager:saveSetting("author_series_order", "author_first")
+        BookInfoManager:saveSetting("config_version", "8")
+    end
 
     -- restart if needed
     if restart_needed then
@@ -315,6 +321,7 @@ function ProjectTitle:init()
     if BookInfoManager:getSetting("use_custom_sorts") then
         ProjectTitle.addSortMethods()
     end
+    author_series_order = BookInfoManager:getSetting("author_series_order") or "author_first"
 
     if BookInfoManager:getSetting("use_custom_bookstatus") then
         BookStatusWidget.genHeader = AltBookStatusWidget.genHeader
@@ -750,6 +757,35 @@ function ProjectTitle:addToMainMenu(menu_items)
                             BookInfoManager:saveSetting("series_mode", series_mode)
                             fc:updateItems(1, true)
                         end,
+                    },
+                    {
+                        text = _("Author and series order"),
+                        sub_item_table = {
+                            {
+                                text = _("Author first"),
+                                checked_func = function()
+                                    return author_series_order == "author_first"
+                                end,
+                                radio = true,
+                                callback = function()
+                                    author_series_order = "author_first"
+                                    BookInfoManager:saveSetting("author_series_order", author_series_order)
+                                    fc:updateItems(1, true)
+                                end,
+                            },
+                            {
+                                text = _("Series first"),
+                                checked_func = function()
+                                    return author_series_order == "series_first"
+                                end,
+                                radio = true,
+                                callback = function()
+                                    author_series_order = "series_first"
+                                    BookInfoManager:saveSetting("author_series_order", author_series_order)
+                                    fc:updateItems(1, true)
+                                end,
+                            },
+                        },
                     },
                     {
                         text = _("Show calibre tags/keywords"),
