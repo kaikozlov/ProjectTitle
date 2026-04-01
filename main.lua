@@ -102,6 +102,7 @@ local AltBookStatusWidget = require("altbookstatuswidget")
 local BookInfoManager = require("bookinfomanager")
 local BookList = require("ui/widget/booklist")
 local FileChooser = require("ui/widget/filechooser")
+local PathChooser = require("ui/widget/pathchooser")
 local FileManager = require("apps/filemanager/filemanager")
 local FileManagerHistory = require("apps/filemanager/filemanagerhistory")
 local FileManagerCollection = require("apps/filemanager/filemanagercollection")
@@ -115,6 +116,8 @@ local FFIUtil = require("ffi/util")
 local _FileChooser__recalculateDimen_orig = FileChooser._recalculateDimen
 local _FileChooser_updateItems_orig = FileChooser.updateItems
 local _FileChooser_onCloseWidget_orig = FileChooser.onCloseWidget
+local _FileChooser_genItemTable_orig = FileChooser.genItemTable         -- not in Cover Browser
+local _PathChooser_init_orig = PathChooser.init
 
 -- https://github.com/koreader/koreader/commits/master/frontend/apps/filemanager/filemanager.lua
 local _FileManager_setupLayout_orig = FileManager.setupLayout           -- not in Cover Browser, orig not called
@@ -1257,6 +1260,7 @@ function ProjectTitle:setupFileManagerDisplayMode(display_mode)
         ProjectTitle.removeFileDialogButtons("filesearcher")
         _modified_widgets["filesearcher"].updateItemTable = _updateItemTable_orig_funcs["filesearcher"]
         ProjectTitle.removeFileDialogButtons("filemanager")
+        PathChooser.init = _PathChooser_init_orig
         FileManager.setupLayout = _FileManager_setupLayout_orig
         if self.ui and self.ui.file_chooser then
             CoverMenu.configureFileChooser(self.ui.file_chooser, nil)
@@ -1268,6 +1272,33 @@ function ProjectTitle:setupFileManagerDisplayMode(display_mode)
     ProjectTitle.addFileDialogButtons("filesearcher")
     _modified_widgets["filesearcher"].updateItemTable = ProjectTitle.getUpdateItemTableFunc(display_mode)
     ProjectTitle.addFileDialogButtons("filemanager")
+    PathChooser.init = function(this)
+        this._pt_force_is_pathchooser = true
+        local original_filechooser_init = FileChooser.init
+        FileChooser.init = function(path_chooser)
+            CoverMenu.configureDisplayMenu(path_chooser, display_mode, {
+                include_gen_item_table = true,
+                do_hint_opened = true,
+                prepare_menu = true,
+            })
+            local result = original_filechooser_init(path_chooser)
+            CoverMenu.finishMenuInit(path_chooser)
+            return result
+        end
+
+        local ok, err = pcall(function()
+            if _PathChooser_init_orig then
+                _PathChooser_init_orig(this)
+            else
+                FileChooser.init(this)
+            end
+        end)
+        FileChooser.init = original_filechooser_init
+
+        if not ok then
+            error(err)
+        end
+    end
     FileManager.setupLayout = CoverMenu.setupLayout
     if self.ui and self.ui.file_chooser then
         CoverMenu.configureFileChooser(self.ui.file_chooser, display_mode)

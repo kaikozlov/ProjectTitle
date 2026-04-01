@@ -4,7 +4,6 @@ local BottomContainer = require("ui/widget/container/bottomcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
 local DocSettings = require("docsettings")
-local DocumentRegistry = require("document/documentregistry")
 local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
@@ -175,6 +174,7 @@ function ListMenuItem:update()
     -- Use cached value from render_context if available, otherwise compute it
     self.is_pathchooser = resolveIsPathChooser(self)
     local is_pathchooser = self.is_pathchooser
+    local render_context = (self.menu and self.menu.render_context) or {}
 
     self.is_directory = not (self.entry.is_file or self.entry.file)
     if self.is_directory then
@@ -235,9 +235,9 @@ function ListMenuItem:update()
             -- check for folder image
             subfolder_cover_image = ptutil.getFolderCover(self.filepath, max_img_w * 0.82, max_img_h, self.entry.pt_cover_path)
             -- check for books with covers in the subfolder
-            if subfolder_cover_image == nil and not self.menu.render_context.disable_auto_foldercovers then
+            if subfolder_cover_image == nil and not render_context.disable_auto_foldercovers then
                 subfolder_cover_image = ptutil.getSubfolderCoverImages(
-                    self.filepath, max_img_w, max_img_h, self.menu.render_context)
+                    self.filepath, max_img_w, max_img_h, render_context)
             end
             -- use stock folder icon
             local stock_image = plugin_dir .. "/resources/folder.svg"
@@ -355,7 +355,7 @@ function ListMenuItem:update()
 
         local book_info = self.menu.getBookInfo(self.filepath)
         self.been_opened = book_info.been_opened
-        if bookinfo and is_pathchooser == false then -- This book is known (and not in patchooser mode)
+        if bookinfo then -- This file is known, including PathChooser stand-ins for unsupported files
             self.bookinfo_found = true
             local cover_bb_used = false
 
@@ -394,7 +394,6 @@ function ListMenuItem:update()
                     -- Let menu know it has some item with images
                     self.menu._has_cover_images = true
                     self._has_cover_image = true
-                    -- add generic file icons, but not in pathchooser
                 else
                     -- use generic file icon insteaed of cover image
                     wleft_height = dimen.h
@@ -481,7 +480,7 @@ function ListMenuItem:update()
                 pages = book_info.pages
             end
 
-            local est_page_count, draw_progressbar = ptutil.showProgressBar(pages, self.menu.render_context)
+            local est_page_count, draw_progressbar = ptutil.showProgressBar(pages, render_context)
             self.pages = est_page_count
             -- bookinfo.pages = est_page_count
 
@@ -627,12 +626,12 @@ function ListMenuItem:update()
             end
 
             -- show progress text, page text, and/or file info text
-            if self.menu.render_context.hide_file_info then
+            if render_context.hide_file_info then
                 progress_str, percent_str, pages_str, pages_left_str = ptutil.formatProgressText(status, bookinfo, pages,
-                    draw_progressbar, percent_finished, progress_strings)
+                    draw_progressbar, percent_finished, progress_strings, render_context)
 
                 -- Get progress text format preference
-                local progress_text_format = self.menu.render_context.progress_text_format
+                local progress_text_format = render_context.progress_text_format
 
                 -- Add tight spacing before progress bar if it exists
                 if draw_progressbar and progress_text_format ~= "status_only" then
@@ -790,9 +789,9 @@ function ListMenuItem:update()
             local wtags_avail_height = 0
             local wmetadata_safe_width = 0
             local title, authors, series, tags, author_series
-            local series_mode = self.menu.render_context.series_mode
+            local series_mode = render_context.series_mode
             local show_series = bookinfo.series and bookinfo.series_index and not bookinfo.ignore_meta
-            local show_tags = self.menu.render_context.show_tags and not self.do_filename_only and not bookinfo.ignore_meta and bookinfo.keywords and bookinfo.keywords ~= ""
+            local show_tags = render_context.show_tags and not self.do_filename_only and not bookinfo.ignore_meta and bookinfo.keywords and bookinfo.keywords ~= ""
 
             -- whether to use or not title and authors
             -- (We wrap each metadata text with BD.auto() to get for each of them
@@ -827,7 +826,7 @@ function ListMenuItem:update()
 
             -- merge series and authors into a single string (may contain linebreaks)
             author_series = ptutil.formatAuthorSeries(authors, series, series_mode, show_tags,
-                self.menu.render_context.author_series_order)
+                render_context.author_series_order)
 
             -- tags
             if show_tags then
@@ -1129,85 +1128,6 @@ function ListMenuItem:update()
                 dimen = dimen:copy(),
                 wmain
             })
-        elseif is_pathchooser == true then -- pathchooser mode
-            if bookinfo and bookinfo._no_provider then
-                self.bookinfo_found = true
-            end
-            local wright
-            local wright_width = 0
-            local wright_items = { align = "right" }
-            local pad_width = Screen:scaleBySize(10) -- on the left, in between, and on the right
-            local image_preview
-            local image_preview_width = 0
-
-            local wmandatory = TextWidget:new {
-                text = self.mandatory or "",
-                face = wright_font_face,
-            }
-            table.insert(wright_items, wmandatory)
-
-            if #wright_items > 0 then
-                for _, w in ipairs(wright_items) do
-                    wright_width = math.max(wright_width, w:getSize().w)
-                end
-                wright = CenterContainer:new {
-                    dimen = Geom:new { w = wright_width, h = dimen.h },
-                    VerticalGroup:new(wright_items),
-                }
-            end
-
-            if self.filepath and DocumentRegistry:isImageFile(self.filepath) then
-                image_preview_width = dimen.h - 2 * Screen:scaleBySize(6)
-                image_preview = FrameContainer:new {
-                    width = image_preview_width,
-                    height = image_preview_width,
-                    margin = 0,
-                    padding = 0,
-                    bordersize = 0,
-                    ImageWidget:new {
-                        file = self.filepath,
-                        width = image_preview_width,
-                        height = image_preview_width,
-                    },
-                }
-            end
-
-            local wleft_width = dimen.w - wright_width - 3 * pad_width - image_preview_width
-            local wlefttext = BD.filename(self.text)
-            local filefont = ptutil.good_sans
-            local wleft = TextBoxWidget:new {
-                text = wlefttext,
-                face = ptutil.getFontFace(filefont, title_font_size),
-                width = wleft_width,
-                alignment = "left",
-                bold = false,
-                height = dimen.h,
-                height_adjust = true,
-                height_overflow_show_ellipsis = true,
-            }
-
-            local left_items = {
-                HorizontalSpan:new { width = Screen:scaleBySize(5) },
-            }
-            if image_preview then
-                table.insert(left_items, image_preview)
-                table.insert(left_items, HorizontalSpan:new { width = pad_width })
-            end
-            table.insert(left_items, wleft)
-
-            widget = OverlapGroup:new {
-                LeftContainer:new {
-                    dimen = dimen:copy(),
-                    HorizontalGroup:new(left_items)
-                },
-                RightContainer:new {
-                    dimen = dimen:copy(),
-                    HorizontalGroup:new {
-                        wright,
-                        HorizontalSpan:new { width = pad_width },
-                    },
-                },
-            }
         else -- bookinfo not found
             if self.init_done then
                 -- Non-initial update(), but our widget is still not found:

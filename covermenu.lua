@@ -206,6 +206,10 @@ end
 -- Build a render context containing all settings needed for rendering
 -- This avoids repeated getSetting() calls during the render loop
 function CoverMenu:buildRenderContext()
+    local is_pathchooser = self._pt_force_is_pathchooser
+    if is_pathchooser == nil then
+        is_pathchooser = ptutil.isPathChooser(self)
+    end
     return {
         -- Display settings
         hide_file_info = BookInfoManager:getSetting("hide_file_info"),
@@ -225,7 +229,7 @@ function CoverMenu:buildRenderContext()
         force_no_progressbars = BookInfoManager:getSetting("force_no_progressbars"),
         show_pages_read_as_progress = BookInfoManager:getSetting("show_pages_read_as_progress"),
         -- Computed values
-        is_pathchooser = ptutil.isPathChooser(self),
+        is_pathchooser = is_pathchooser,
         is_touch_device = Device:isTouchDevice(),
     }
 end

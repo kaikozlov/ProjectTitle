@@ -101,6 +101,23 @@ describe("ListMenu", function()
             return false
         end
 
+        local function collect_texts(node, texts)
+            texts = texts or {}
+            if type(node) ~= "table" then
+                return texts
+            end
+            if type(node.text) == "string" and node.text ~= "" then
+                texts[#texts + 1] = node.text
+            end
+            for _, child in ipairs(node.children or {}) do
+                collect_texts(child, texts)
+            end
+            for i = 1, #node do
+                collect_texts(node[i], texts)
+            end
+            return texts
+        end
+
         it("recalculates dimensions correctly in portrait", function()
             local menu = {
                 inner_dimen = { w = 600, h = 800 },
@@ -285,9 +302,9 @@ describe("ListMenu", function()
                 getBookInfo = function()
                     return { been_opened = false, status = "unread" }
                 end,
-                item_dimen = { copy = function() return { w = 100, h = 20 } end },
+                item_dimen = { copy = function() return { w = 100, h = 48 } end },
                 item_width = 100,
-                item_height = 20,
+                item_height = 48,
                 render_context = render_context,
                 _do_cover_images = false,
                 _do_filename_only = false,
@@ -401,12 +418,12 @@ describe("ListMenu", function()
             assert.is_false(browser_item.is_pathchooser)
         end)
 
-        it("shows image previews for image files in pathchooser mode", function()
+        it("uses the rich list renderer for chooser book files", function()
             local item = ListMenuItem:new {
                 height = 48,
                 width = 240,
-                entry = { text = "cover.png", file = "/chooser/cover.png", path = "/chooser/cover.png", is_file = true },
-                text = "cover.png",
+                entry = { text = "book.epub", file = "/chooser/book.epub", path = "/chooser/book.epub", is_file = true },
+                text = "book.epub",
                 show_parent = {},
                 mandatory = "1 MB",
                 dimen = { x = 0, y = 0, w = 240, h = 48, copy = function(self) return { x = self.x, y = self.y, w = self.w, h = self.h } end },
@@ -418,20 +435,30 @@ describe("ListMenu", function()
                         disable_auto_foldercovers = true,
                     },
                     getBookInfo = function()
-                        return { been_opened = false, status = "unread" }
+                        return { been_opened = false, status = "reading", percent_finished = 0.25, pages = 400 }
                     end,
                     _bookinfo_batch = {
-                        ["/chooser/cover.png"] = {
-                            _no_provider = true,
+                        ["/chooser/book.epub"] = {
+                            cover_fetched = true,
+                            has_cover = false,
+                            ignore_cover = nil,
+                            ignore_meta = nil,
+                            title = "Test Book",
+                            authors = "Test Author",
+                            pages = 400,
                         },
                     },
                 },
-                do_cover_image = false,
+                do_cover_image = true,
                 do_filename_only = false,
                 do_hint_opened = false,
             }
 
+            local texts = collect_texts(item._underline_container[1])
+
             assert.is_true(has_widget_named(item._underline_container[1], "ImageWidget"))
+            assert.is_true(item.bookinfo_found)
+            assert.is_true(table.concat(texts, "\n"):find("Test Author", 1, true) ~= nil)
         end)
 
         it("prefetches only file entries for the page batch", function()

@@ -5,7 +5,6 @@ local BottomContainer = require("ui/widget/container/bottomcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
 local DocSettings = require("docsettings")
-local DocumentRegistry = require("document/documentregistry")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
@@ -102,7 +101,6 @@ local FakeCover = FrameContainer:extend {
     initial_sizedec = 0,
     color = Blitbuffer.COLOR_GRAY_3,
     background = Blitbuffer.COLOR_GRAY_E,
-    is_pathchooser = false,
 }
 
 function FakeCover:init()
@@ -112,112 +110,110 @@ function FakeCover:init()
     local title = self.title
     local filename = self.filename
     local series = nil
-    local filesize = nil
     local inter_pad_1
     local inter_pad_2
-    local authors_wg, series_wg, filesize_wg, title_wg, filename_wg
+    local authors_wg, series_wg, title_wg, filename_wg
     local titlefont
     local width, height
     local title_text_color
     local title_background_color
 
-    if self.is_pathchooser == false then
-        width = self.width - 2 * (self.bordersize + self.margin + self.padding)
-        height = self.height - 2 * (self.bordersize + self.margin + self.padding)
-        local text_width = width - (Size.padding.small * 2)
-        -- BookInfoManager:extractBookInfo() made sure
-        -- to save as nil (NULL) metadata that were an empty string
+    width = self.width - 2 * (self.bordersize + self.margin + self.padding)
+    height = self.height - 2 * (self.bordersize + self.margin + self.padding)
+    local text_width = width - (Size.padding.small * 2)
+    -- BookInfoManager:extractBookInfo() made sure
+    -- to save as nil (NULL) metadata that were an empty string
 
-        -- (some engines may have already given filename (without extension) as title)
-        local bd_wrap_title_as_filename = false
-        titlefont = ptutil.title_serif
-        title_text_color = Blitbuffer.COLOR_WHITE
-        title_background_color = Blitbuffer.COLOR_GRAY_3
-        local bold_title = false
-        if not title or title:match("^%s*$") then -- use filename as title (big and centered)
-            titlefont = ptutil.good_serif
-            bold_title = true
-            title = filename
-            -- Truncate filename if too long
-            local max_len = 60
-            if title:len() > max_len then
-                title = title:sub(1, max_len) .. "…"
-            end
-            title_text_color = Blitbuffer.COLOR_BLACK
-            title_background_color = self.background
-            if not self.title_add and self.filename_add then
-                -- filename_add ("…" or "(deleted)") always comes without any title_add
-                self.title_add = self.filename_add
-                self.filename_add = nil
-            end
-            bd_wrap_title_as_filename = true
+    -- (some engines may have already given filename (without extension) as title)
+    local bd_wrap_title_as_filename = false
+    titlefont = ptutil.title_serif
+    title_text_color = Blitbuffer.COLOR_WHITE
+    title_background_color = Blitbuffer.COLOR_GRAY_3
+    local bold_title = false
+    if not title or title:match("^%s*$") then -- use filename as title (big and centered)
+        titlefont = ptutil.good_serif
+        bold_title = true
+        title = filename
+        -- Truncate filename if too long
+        local max_len = 60
+        if title:len() > max_len then
+            title = title:sub(1, max_len) .. "…"
         end
-
-        -- If no authors, and title is filename without extension, it was
-        -- probably made by an engine, and we can consider it a filename, and
-        -- act according to common usage in naming files.
-        if not authors and title and self.filename and self.filename:sub(1, title:len()) == title then
-            bd_wrap_title_as_filename = true
-            titlefont = ptutil.good_serif
-            bold_title = true
-            title_text_color = Blitbuffer.COLOR_BLACK
-            title_background_color = self.background
-            -- Replace a hyphen surrounded by spaces (which most probably was
-            -- used to separate Authors/Title/Serie/Year/Categorie in the
-            -- filename with a \n
-            title = title:gsub(" %- ", "\n")
-            -- Same with |
-            title = title:gsub("|", "\n")
-            -- Also replace underscores with spaces
-            title = title:gsub("_", " ")
-            -- Some filenames may also use dots as separators, but dots
-            -- can also have some meaning, so we can't just remove them.
-            -- But at least, make dots breakable (they wouldn't be if not
-            -- followed by a space), by adding to them a zero-width-space,
-            -- so the dots stay on the right of their preceeding word.
-            title = title:gsub("%.", ".\u{200B}")
-            -- Except for a last dot near end of title that might preceed
-            -- a file extension: we'd rather want the dot and its suffix
-            -- together on a last line: so, move the zero-width-space
-            -- before it.
-            title = title:gsub("%.\u{200B}(%w%w?%w?%w?%w?)$", "\u{200B}.%1")
-            -- These substitutions will hopefully have no impact with the following BD wrapping
+        title_text_color = Blitbuffer.COLOR_BLACK
+        title_background_color = self.background
+        if not self.title_add and self.filename_add then
+            -- filename_add ("…" or "(deleted)") always comes without any title_add
+            self.title_add = self.filename_add
+            self.filename_add = nil
         end
-        if title then
-            title = bd_wrap_title_as_filename and BD.filename(title) or BD.auto(title)
-        end
+        bd_wrap_title_as_filename = true
+    end
 
-        authors = ptutil.formatAuthors(self.authors, 3)
+    -- If no authors, and title is filename without extension, it was
+    -- probably made by an engine, and we can consider it a filename, and
+    -- act according to common usage in naming files.
+    if not authors and title and self.filename and self.filename:sub(1, title:len()) == title then
+        bd_wrap_title_as_filename = true
+        titlefont = ptutil.good_serif
+        bold_title = true
+        title_text_color = Blitbuffer.COLOR_BLACK
+        title_background_color = self.background
+        -- Replace a hyphen surrounded by spaces (which most probably was
+        -- used to separate Authors/Title/Serie/Year/Categorie in the
+        -- filename with a \n
+        title = title:gsub(" %- ", "\n")
+        -- Same with |
+        title = title:gsub("|", "\n")
+        -- Also replace underscores with spaces
+        title = title:gsub("_", " ")
+        -- Some filenames may also use dots as separators, but dots
+        -- can also have some meaning, so we can't just remove them.
+        -- But at least, make dots breakable (they wouldn't be if not
+        -- followed by a space), by adding to them a zero-width-space,
+        -- so the dots stay on the right of their preceeding word.
+        title = title:gsub("%.", ".\u{200B}")
+        -- Except for a last dot near end of title that might preceed
+        -- a file extension: we'd rather want the dot and its suffix
+        -- together on a last line: so, move the zero-width-space
+        -- before it.
+        title = title:gsub("%.\u{200B}(%w%w?%w?%w?%w?)$", "\u{200B}.%1")
+        -- These substitutions will hopefully have no impact with the following BD wrapping
+    end
+    if title then
+        title = bd_wrap_title_as_filename and BD.filename(title) or BD.auto(title)
+    end
 
-        if self.title_add then
-            title = (title and title or "") .. self.title_add
-        end
-        if self.authors_add then
-            series = self.authors_add
-        end
+    authors = ptutil.formatAuthors(self.authors, 3)
 
-        -- We build the VerticalGroup widget with decreasing font sizes till
-        -- the widget fits into available height
-        -- Use ptutil.estimateFontSize() to get a good starting point and reduce iterations
-        local combined_text = (authors or "") .. (title or "") .. (series or "")
-        local available_height_for_text = height * 0.8 -- Reserve 20% for padding
-        local estimated_font = ptutil.estimateFontSize({
-            text = combined_text,
-            width = text_width,
-            height = available_height_for_text,
-            min_size = math.min(self.authors_font_min, self.title_font_min),
-            max_size = self.title_font_max,
-        })
-        -- Convert estimated font size to sizedec (how much to subtract from max)
-        -- Start from a sizedec that gives us the estimated font, but not less than initial_sizedec
-        local estimated_sizedec = math.max(0, self.title_font_max - estimated_font)
-        local sizedec = math.max(self.initial_sizedec, math.floor(estimated_sizedec / self.sizedec_step) * self.sizedec_step)
-        local loop2 = false -- we may do a second pass with modifier title and authors strings
-        local texts_height
-        local free_height
-        local textboxes_ok
+    if self.title_add then
+        title = (title and title or "") .. self.title_add
+    end
+    if self.authors_add then
+        series = self.authors_add
+    end
 
-        while true do
+    -- We build the VerticalGroup widget with decreasing font sizes till
+    -- the widget fits into available height
+    -- Use ptutil.estimateFontSize() to get a good starting point and reduce iterations
+    local combined_text = (authors or "") .. (title or "") .. (series or "")
+    local available_height_for_text = height * 0.8 -- Reserve 20% for padding
+    local estimated_font = ptutil.estimateFontSize({
+        text = combined_text,
+        width = text_width,
+        height = available_height_for_text,
+        min_size = math.min(self.authors_font_min, self.title_font_min),
+        max_size = self.title_font_max,
+    })
+    -- Convert estimated font size to sizedec (how much to subtract from max)
+    -- Start from a sizedec that gives us the estimated font, but not less than initial_sizedec
+    local estimated_sizedec = math.max(0, self.title_font_max - estimated_font)
+    local sizedec = math.max(self.initial_sizedec, math.floor(estimated_sizedec / self.sizedec_step) * self.sizedec_step)
+    local loop2 = false -- we may do a second pass with modifier title and authors strings
+    local texts_height
+    local free_height
+    local textboxes_ok
+
+    while true do
             -- Free previously made widgets to avoid memory leaks
             if authors_wg then
                 authors_wg:free(true)
@@ -334,66 +330,6 @@ function FakeCover:init()
                     break
                 end
             end
-        end
-    else -- pathchooser gets a plain style
-        title = BD.filename(self.filename)
-        filesize = self.filename_add
-        local textboxes_ok
-        local free_height
-        self.background = Blitbuffer.COLOR_WHITE
-        self.radius = Screen:scaleBySize(10)
-        self.bordersize = Size.border.default
-        self.padding = Screen:scaleBySize(5)
-        width = self.width - 2 * (self.bordersize + self.margin + self.padding)
-        height = self.height - 2 * (self.bordersize + self.margin + self.padding)
-        local text_width = width - (Size.padding.small * 2)
-        -- Use estimateFontSize() to get a good starting point
-        local estimated_font = ptutil.estimateFontSize({
-            text = title or "",
-            width = text_width,
-            height = height * 0.8,
-            min_size = 10,
-            max_size = 20,
-        })
-        local sizedec = math.max(1, 20 - estimated_font)
-        while true do
-            if title_wg then
-                title_wg:free(true)
-                title_wg = nil
-            end
-            title_wg = TextBoxWidget:new {
-                text = title,
-                face = ptutil.getFontFace("cfont", math.max(20 - sizedec, 10)),
-                bold = false,
-                width = text_width,
-                alignment = "center",
-                fgcolor = Blitbuffer.COLOR_BLACK,
-                bgcolor = Blitbuffer.COLOR_WHITE,
-            }
-            free_height = height - title_wg:getSize().h
-            textboxes_ok = true
-            if (title_wg and title_wg.has_split_inside_word) then
-                -- We may get a nicer cover at next lower font size
-                textboxes_ok = false
-            end
-            if textboxes_ok and free_height > 0.2 * height then -- enough free space to not look constrained
-                break
-            end
-            sizedec = sizedec + 1
-            if sizedec > 10 then break end
-        end
-        filesize_wg = TextBoxWidget:new {
-            text = filesize,
-            face = ptutil.getFontFace("infont", 15),
-            bold = false,
-            width = text_width,
-            alignment = "center",
-            fgcolor = Blitbuffer.COLOR_BLACK,
-            bgcolor = Blitbuffer.COLOR_WHITE,
-        }
-        free_height = free_height - filesize_wg:getSize().h
-        inter_pad_1 = Screen:scaleBySize(7)
-        inter_pad_2 = free_height - inter_pad_1
     end
 
     local vgroup = VerticalGroup:new {}
@@ -416,9 +352,6 @@ function FakeCover:init()
         table.insert(vgroup, series_wg)
     end
     table.insert(vgroup, VerticalSpan:new { width = inter_pad_2 })
-    if filesize then
-        table.insert(vgroup, filesize_wg)
-    end
 
     if self.file_deleted then
         self.dim = true
@@ -532,7 +465,7 @@ function MosaicMenuItem:update()
     -- test to see what style to draw (pathchooser vs one of our fancy modes)
     -- Use cached value from render_context if available, otherwise compute it
     self.is_pathchooser = resolveIsPathChooser(self)
-    local is_pathchooser = self.is_pathchooser
+    local render_context = (self.menu and self.menu.render_context) or {}
 
     self.is_directory = not (self.entry.is_file or self.entry.file)
     if self.is_directory then
@@ -545,218 +478,167 @@ function MosaicMenuItem:update()
         if nbitems_string:match('^☆ ') then
             nbitems_string = nbitems_string:sub(5)
         end
-        if is_pathchooser == false then
-            local subfolder_cover_image
-            -- check for folder image
-            subfolder_cover_image = ptutil.getFolderCover(self.filepath, dimen.w, dimen.h, self.entry.pt_cover_path)
-            -- check for books with covers in the subfolder
-            if subfolder_cover_image == nil and not self.menu.render_context.disable_auto_foldercovers then
-                subfolder_cover_image = ptutil.getSubfolderCoverImages(
-                    self.filepath, max_img_w, max_img_h, self.menu.render_context)
-            end
-            -- use stock folder icon
-            if subfolder_cover_image == nil then
-                local stock_image = plugin_dir .. "/resources/folder.svg"
-                local _, _, scale_factor = BookInfoManager.getCachedCoverSize(250, 500, max_img_w * 1.1, max_img_h * 1.1)
-                subfolder_cover_image = FrameContainer:new {
-                    width = dimen.w,
-                    height = dimen.h,
-                    margin = 0,
-                    padding = 0,
-                    color = Blitbuffer.COLOR_WHITE,
-                    bordersize = 0,
-                    dim = self.file_deleted,
+        local subfolder_cover_image
+        -- check for folder image
+        subfolder_cover_image = ptutil.getFolderCover(self.filepath, dimen.w, dimen.h, self.entry.pt_cover_path)
+        -- check for books with covers in the subfolder
+        if subfolder_cover_image == nil and not render_context.disable_auto_foldercovers then
+            subfolder_cover_image = ptutil.getSubfolderCoverImages(
+                self.filepath, max_img_w, max_img_h, render_context)
+        end
+        -- use stock folder icon
+        if subfolder_cover_image == nil then
+            local stock_image = plugin_dir .. "/resources/folder.svg"
+            local fallback_cover_w = math.floor(max_img_w * 0.78)
+            local fallback_cover_h = math.floor(max_img_h * 0.78)
+            local _, _, scale_factor = BookInfoManager.getCachedCoverSize(250, 500, fallback_cover_w, fallback_cover_h)
+            subfolder_cover_image = FrameContainer:new {
+                width = dimen.w,
+                height = dimen.h,
+                margin = 0,
+                padding = 0,
+                color = Blitbuffer.COLOR_WHITE,
+                bordersize = 0,
+                dim = self.file_deleted,
+                CenterContainer:new {
+                    dimen = Geom:new { w = dimen.w, h = dimen.h },
                     ImageWidget:new({
                         file = stock_image,
                         alpha = true,
                         scale_factor = scale_factor,
-                        width = max_img_w,
-                        height = max_img_h,
+                        width = fallback_cover_w,
+                        height = fallback_cover_h,
                         original_in_nightmode = false,
                     }),
-                }
-            end
-
-            -- build final widget with whatever we assembled from above
-            local directory_text
-            local function build_directory_text(font_size, height, baseline)
-                directory_text = TextWidget:new {
-                    text = " " .. directory_string .. " ",
-                    face = ptutil.getFontFace(ptutil.good_serif, font_size),
-                    max_width = dimen.w,
-                    alignment = "center",
-                    padding = 0,
-                    forced_height = height,
-                    forced_baseline = baseline,
-                }
-            end
-            -- Use estimateFontSize() to get a better starting point
-            local estimated_font = ptutil.estimateFontSize({
-                text = directory_string,
-                width = dimen.w,
-                height = dimen.h * 0.3, -- Directory text only uses small portion
-                min_size = ptutil.grid_defaults.dir_font_min,
-                max_size = ptutil.grid_defaults.dir_font_nominal,
-            })
-            local dirtext_font_size = math.max(estimated_font, ptutil.grid_defaults.dir_font_min)
-            build_directory_text(dirtext_font_size)
-            local directory_text_height = directory_text:getSize().h
-            local directory_text_baseline = directory_text:getBaseline()
-            while dirtext_font_size > ptutil.grid_defaults.dir_font_min do
-                if directory_text:isTruncated() then
-                    dirtext_font_size = math.min(dirtext_font_size - ptutil.grid_defaults.fontsize_dec_step, ptutil.grid_defaults.dir_font_min)
-                    build_directory_text(dirtext_font_size, directory_text_height, directory_text_baseline)
-                else
-                    break
-                end
-            end
-            local directory_frame = UnderlineContainer:new {
-                linesize = Screen:scaleBySize(1),
-                color = Blitbuffer.COLOR_BLACK,
-                bordersize = 0,
-                padding = 0,
-                margin = 0,
-                HorizontalGroup:new {
-                    directory_text,
-                    LineWidget:new {
-                        dimen = Geom:new { w = Screen:scaleBySize(1), h = directory_text:getSize().h, },
-                        background = Blitbuffer.COLOR_BLACK,
-                    },
-                },
-            }
-            local directory = AlphaContainer:new {
-                alpha = alpha_level,
-                directory_frame,
-            }
-
-            -- use non-alpha styling when focus indicator is involved
-            if not self.menu.render_context.is_touch_device or self.menu.render_context.force_focus_indicator then
-                directory = FrameContainer:new {
-                    bordersize = 0,
-                    padding = 0,
-                    margin = 0,
-                    background = Blitbuffer.COLOR_WHITE,
-                    directory_frame,
-                }
-            end
-
-            local nbitems_text = TextWidget:new {
-                text = " " .. nbitems_string .. " ",
-                face = ptutil.getFontFace("infont", 15),
-                max_width = dimen.w,
-                alignment = "center",
-                padding = Size.padding.tiny,
-            }
-            local nbitems_frame = UnderlineContainer:new {
-                linesize = Screen:scaleBySize(1),
-                color = Blitbuffer.COLOR_BLACK,
-                bordersize = 0,
-                padding = 0,
-                margin = 0,
-                HorizontalGroup:new {
-                    nbitems_text,
-                    LineWidget:new {
-                        dimen = Geom:new { w = Screen:scaleBySize(1), h = directory_text:getSize().h, },
-                        background = Blitbuffer.COLOR_BLACK,
-                    },
-                },
-            }
-            local nbitems_frame_container = AlphaContainer:new {
-                alpha = alpha_level,
-                nbitems_frame,
-            }
-
-            -- use non-alpha styling when focus indicator is involved
-            if not self.menu.render_context.is_touch_device or self.menu.render_context.force_focus_indicator then
-                nbitems_frame_container = FrameContainer:new {
-                    bordersize = 0,
-                    padding = 0,
-                    margin = 0,
-                    background = Blitbuffer.COLOR_WHITE,
-                    nbitems_frame,
-                }
-            end
-
-            local nbitems = HorizontalGroup:new {
-                dimen = dimen,
-                HorizontalSpan:new {
-                    width = dimen.w - nbitems_frame:getSize().w - Size.padding.small
-                },
-                nbitems_frame_container
-            }
-
-            local widget_parts = OverlapGroup:new {
-                dimen = dimen,
-                CenterContainer:new { dimen = dimen, subfolder_cover_image },
-            }
-            if self.menu.render_context.show_name_grid_folders then
-                table.insert(widget_parts, TopContainer:new { dimen = dimen, directory })
-                table.insert(widget_parts, BottomContainer:new { dimen = dimen, nbitems })
-            end
-            widget = FrameContainer:new {
-                width = dimen.w,
-                height = dimen.h,
-                margin = 0,
-                padding = 0,
-                bordersize = 0,
-                radius = nil,
-                widget_parts,
-            }
-        else -- pathchooser gets a plain style
-            local margin = Screen:scaleBySize(5) -- make directories less wide
-            local padding = Screen:scaleBySize(5)
-            border_size = Size.border.thick      -- make directories' borders larger
-            local dimen_in = Geom:new {
-                w = dimen.w - (margin + padding + border_size) * 2,
-                h = dimen.h - (margin + padding + border_size) * 2
-            }
-            local nbitems = TextBoxWidget:new {
-                text = nbitems_string,
-                face = ptutil.getFontFace("infont", 15),
-                width = dimen_in.w,
-                alignment = "center",
-            }
-            local available_height = dimen_in.h - 3 * nbitems:getSize().h
-            local dir_font_size = 20
-            local directory
-            while true do
-                if directory then
-                    directory:free(true)
-                end
-                directory = TextBoxWidget:new {
-                    text = directory_string,
-                    face = ptutil.getFontFace("cfont", dir_font_size),
-                    width = dimen_in.w,
-                    alignment = "center",
-                    bold = true,
-                }
-                if directory:getSize().h <= available_height then
-                    break
-                end
-                dir_font_size = dir_font_size - 1
-                if dir_font_size < 10 then -- don't go too low
-                    directory:free()
-                    directory.height = available_height
-                    directory.height_adjust = true
-                    directory.height_overflow_show_ellipsis = true
-                    directory:init()
-                    break
-                end
-            end
-            widget = FrameContainer:new {
-                width = dimen.w,
-                height = dimen.h,
-                margin = margin,
-                padding = padding,
-                bordersize = border_size,
-                radius = Screen:scaleBySize(10),
-                OverlapGroup:new {
-                    dimen = dimen_in,
-                    TopContainer:new { dimen = dimen_in, directory },
-                    BottomContainer:new { dimen = dimen_in, nbitems },
                 },
             }
         end
+
+        -- build final widget with whatever we assembled from above
+        local directory_text
+        local function build_directory_text(font_size, height, baseline)
+            directory_text = TextWidget:new {
+                text = " " .. directory_string .. " ",
+                face = ptutil.getFontFace(ptutil.good_serif, font_size),
+                max_width = dimen.w,
+                alignment = "center",
+                padding = 0,
+                forced_height = height,
+                forced_baseline = baseline,
+            }
+        end
+        -- Use estimateFontSize() to get a better starting point
+        local estimated_font = ptutil.estimateFontSize({
+            text = directory_string,
+            width = dimen.w,
+            height = dimen.h * 0.3, -- Directory text only uses small portion
+            min_size = ptutil.grid_defaults.dir_font_min,
+            max_size = ptutil.grid_defaults.dir_font_nominal,
+        })
+        local dirtext_font_size = math.max(estimated_font, ptutil.grid_defaults.dir_font_min)
+        build_directory_text(dirtext_font_size)
+        local directory_text_height = directory_text:getSize().h
+        local directory_text_baseline = directory_text:getBaseline()
+        while dirtext_font_size > ptutil.grid_defaults.dir_font_min do
+            if directory_text:isTruncated() then
+                dirtext_font_size = math.min(dirtext_font_size - ptutil.grid_defaults.fontsize_dec_step, ptutil.grid_defaults.dir_font_min)
+                build_directory_text(dirtext_font_size, directory_text_height, directory_text_baseline)
+            else
+                break
+            end
+        end
+        local directory_frame = UnderlineContainer:new {
+            linesize = Screen:scaleBySize(1),
+            color = Blitbuffer.COLOR_BLACK,
+            bordersize = 0,
+            padding = 0,
+            margin = 0,
+            HorizontalGroup:new {
+                directory_text,
+                LineWidget:new {
+                    dimen = Geom:new { w = Screen:scaleBySize(1), h = directory_text:getSize().h, },
+                    background = Blitbuffer.COLOR_BLACK,
+                },
+            },
+        }
+        local directory = AlphaContainer:new {
+            alpha = alpha_level,
+            directory_frame,
+        }
+
+        -- use non-alpha styling when focus indicator is involved
+        if not render_context.is_touch_device or render_context.force_focus_indicator then
+            directory = FrameContainer:new {
+                bordersize = 0,
+                padding = 0,
+                margin = 0,
+                background = Blitbuffer.COLOR_WHITE,
+                directory_frame,
+            }
+        end
+
+        local nbitems_text = TextWidget:new {
+            text = " " .. nbitems_string .. " ",
+            face = ptutil.getFontFace("infont", 15),
+            max_width = dimen.w,
+            alignment = "center",
+            padding = Size.padding.tiny,
+        }
+        local nbitems_frame = UnderlineContainer:new {
+            linesize = Screen:scaleBySize(1),
+            color = Blitbuffer.COLOR_BLACK,
+            bordersize = 0,
+            padding = 0,
+            margin = 0,
+            HorizontalGroup:new {
+                nbitems_text,
+                LineWidget:new {
+                    dimen = Geom:new { w = Screen:scaleBySize(1), h = directory_text:getSize().h, },
+                    background = Blitbuffer.COLOR_BLACK,
+                },
+            },
+        }
+        local nbitems_frame_container = AlphaContainer:new {
+            alpha = alpha_level,
+            nbitems_frame,
+        }
+
+        -- use non-alpha styling when focus indicator is involved
+        if not render_context.is_touch_device or render_context.force_focus_indicator then
+            nbitems_frame_container = FrameContainer:new {
+                bordersize = 0,
+                padding = 0,
+                margin = 0,
+                background = Blitbuffer.COLOR_WHITE,
+                nbitems_frame,
+            }
+        end
+
+        local nbitems = HorizontalGroup:new {
+            dimen = dimen,
+            HorizontalSpan:new {
+                width = dimen.w - nbitems_frame:getSize().w - Size.padding.small
+            },
+            nbitems_frame_container
+        }
+
+        local widget_parts = OverlapGroup:new {
+            dimen = dimen,
+            CenterContainer:new { dimen = dimen, subfolder_cover_image },
+        }
+        if render_context.show_name_grid_folders then
+            table.insert(widget_parts, TopContainer:new { dimen = dimen, directory })
+            table.insert(widget_parts, BottomContainer:new { dimen = dimen, nbitems })
+        end
+        widget = FrameContainer:new {
+            width = dimen.w,
+            height = dimen.h,
+            margin = 0,
+            padding = 0,
+            bordersize = 0,
+            radius = nil,
+            widget_parts,
+        }
     else  -- file
         self.file_deleted = self.entry.dim -- entry with deleted file from History or selected file from FM
 
@@ -796,7 +678,7 @@ function MosaicMenuItem:update()
         local book_info = self.menu.getBookInfo(self.filepath)
         self.book_info = book_info
         self.been_opened = book_info.been_opened
-        if bookinfo and is_pathchooser == false then -- This book is known
+        if bookinfo then -- This file is known, including PathChooser stand-ins for unsupported files
             -- Current page / pages are available or more accurate in .sdr/metadata.lua.
             -- KOReader's BookList already caches this sidecar-derived state.
 
@@ -809,7 +691,7 @@ function MosaicMenuItem:update()
             if not pages and book_info and book_info.pages then
                 pages = book_info.pages
             end
-            self.pages, self.show_progress_bar = ptutil.showProgressBar(pages, self.menu.render_context)
+            self.pages, self.show_progress_bar = ptutil.showProgressBar(pages, render_context)
             
             local cover_bb_used = false
             self.bookinfo_found = true
@@ -823,7 +705,7 @@ function MosaicMenuItem:update()
                 cover_bb_used = true
                 local frame_radius = self.show_progress_bar and Size.radius.default or 0
                 local border_total = Size.border.thin * 2
-                local show_titles_setting = self.menu.render_context.show_mosaic_titles
+                local show_titles_setting = render_context.show_mosaic_titles
                 local title_text = not bookinfo.ignore_meta and bookinfo.title or nil
                 local authors_text = not bookinfo.ignore_meta and bookinfo.authors or nil
                 
@@ -1022,7 +904,6 @@ function MosaicMenuItem:update()
                         file_deleted = self.file_deleted,
                         bottom_pad = bottom_pad,
                         bottom_right_compensate = not self.show_progress_bar and self.do_hint_opened,
-                        is_pathchooser = self.is_pathchooser,
                     }
                 }
                 self.cover_area = {
@@ -1040,7 +921,7 @@ function MosaicMenuItem:update()
             if bookinfo.description then
                 self.has_description = true
             end
-        elseif is_pathchooser == false then -- bookinfo not found
+        else -- bookinfo not found
             if self.init_done then
                 -- Non-initial update(), but our widget is still not found:
                 -- it does not need to change, so avoid making the same FakeCover
@@ -1068,51 +949,8 @@ function MosaicMenuItem:update()
                     filename_add = "\n" .. hint,
                     initial_sizedec = 4, -- start with a smaller font when filenames only
                     file_deleted = self.file_deleted,
-                    is_pathchooser = self.is_pathchooser,
                 }
             }
-            self.cover_area = {
-                width = dimen.w,
-                height = dimen.h,
-                offset_x = 0,
-                offset_y = 0,
-            }
-        else -- we're in pathchooser mode
-            if bookinfo and bookinfo._no_provider then
-                self.bookinfo_found = true
-            end
-            local filesize = self.mandatory or ""
-            if self.filepath and DocumentRegistry:isImageFile(self.filepath) then
-                widget = CenterContainer:new {
-                    dimen = dimen,
-                    FrameContainer:new {
-                        width = dimen.w,
-                        height = dimen.h,
-                        margin = 0,
-                        padding = 0,
-                        bordersize = border_size,
-                        ImageWidget:new {
-                            file = self.filepath,
-                            width = max_img_w,
-                            height = max_img_h,
-                        },
-                    }
-                }
-            else
-                widget = CenterContainer:new {
-                    dimen = dimen,
-                    FakeCover:new {
-                        width = dimen.w,
-                        height = dimen.h,
-                        bordersize = border_size,
-                        filename = self.text,
-                        filename_add = "\n" .. filesize,
-                        initial_sizedec = 4, -- start with a smaller font when filenames only
-                        file_deleted = self.file_deleted,
-                        is_pathchooser = self.is_pathchooser,
-                    }
-                }
-            end
             self.cover_area = {
                 width = dimen.w,
                 height = dimen.h,
@@ -1167,8 +1005,8 @@ function MosaicMenuItem:buildOverlayWidgets()
     if self.is_directory then return end
     
     local bookinfo = self.bookinfo
-    -- Guard against missing render_context (can happen in tests) or pathchooser mode
-    if not bookinfo or self.is_pathchooser or not self.menu or not self.menu.render_context then return end
+    -- Guard against missing render_context (can happen in tests)
+    if not bookinfo or not self.menu or not self.menu.render_context then return end
     
     -- Series widget
     local series_mode = self.menu.render_context.series_mode
@@ -1340,7 +1178,7 @@ function MosaicMenuItem:paintTo(bb, x, y)
     local cover_top = y + cover.offset_y
     local cover_bottom = cover_top + cover.height
 
-    if self.do_hint_opened and self.been_opened and self.is_pathchooser == false then
+    if self.do_hint_opened and self.been_opened then
         if self.status == "complete" and not self.show_progress_bar then
             corner_mark = complete_mark
             local corner_mark_margin = math.floor((corner_mark_size - corner_mark:getSize().h) / 2)
@@ -1367,7 +1205,7 @@ function MosaicMenuItem:paintTo(bb, x, y)
             self._series_widget:paintTo(bb, pos_x, pos_y)
         end
 
-        if self.show_progress_bar and self.is_pathchooser == false then
+        if self.show_progress_bar then
             -- Calculate progress bar width
             local progress_widget_width_mult = 1.0
             local est_page_count = self.pages or nil
@@ -1418,7 +1256,7 @@ function MosaicMenuItem:paintTo(bb, x, y)
         end
 
         -- Paint cached progress text widget
-        if self._progress_text_widget and self.is_pathchooser == false then
+        if self._progress_text_widget then
             local progress_widget_margin = math.floor((corner_mark_size - self._progress_text_widget:getSize().h) / 2)
             local pos_x = x
             local pos_y = cover_bottom - corner_mark_size +

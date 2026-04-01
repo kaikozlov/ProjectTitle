@@ -38,6 +38,7 @@ describe("Main Settings", function()
         package.loaded["ui/widget/bookstatuswidget"] = {}
         package.loaded["altbookstatuswidget"] = {}
         package.loaded["ui/widget/filechooser"] = {}
+        package.loaded["ui/widget/pathchooser"] = { init = function() end }
         package.loaded["apps/filemanager/filemanager"] = {}
         package.loaded["apps/filemanager/filemanagerhistory"] = {}
         package.loaded["apps/filemanager/filemanagerfilesearcher"] = {}

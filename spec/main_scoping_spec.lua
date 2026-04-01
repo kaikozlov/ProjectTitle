@@ -46,6 +46,12 @@ describe("Main Menu Scoping", function()
         }
 
         local filechooser = {
+            init = function(self)
+                self.title_bar = self.title_bar or { title = self.title or "" }
+                if self._run_filechooser_init then
+                    self:_run_filechooser_init()
+                end
+            end,
             _recalculateDimen = function() end,
             updateItems = function() end,
             onCloseWidget = function() end,
@@ -53,6 +59,21 @@ describe("Main Menu Scoping", function()
             switchItemTable = function() end,
         }
         package.loaded["ui/widget/filechooser"] = filechooser
+        package.loaded["ui/widget/pathchooser"] = {
+            init = function(self)
+                if self.title == true then
+                    if self.select_directory and not self.select_file then
+                        self.title = "Long-press folder's name to choose it"
+                    elseif not self.select_directory and self.select_file then
+                        self.title = "Long-press file's name to choose it"
+                    else
+                        self.title = "Long-press item's name to choose it"
+                    end
+                end
+                filechooser.init(self)
+                self._pathchooser_init_original = true
+            end,
+        }
 
         package.loaded["apps/filemanager/filemanager"] = {
             setupLayout = function() end,
@@ -143,6 +164,23 @@ describe("Main Menu Scoping", function()
         assert.equal(original_recalculate_dimen, package.loaded["ui/widget/filechooser"]._recalculateDimen)
     end)
 
+    it("replaces shared PathChooser init when enabling file manager mode", function()
+        local PathChooser = package.loaded["ui/widget/pathchooser"]
+        local original_init = PathChooser.init
+
+        CoverBrowser.ui = {
+            file_chooser = {
+                _recalculateDimen = function() end,
+                switchItemTable = function() end,
+            },
+        }
+        CoverBrowser.refreshFileManagerInstance = function() end
+
+        CoverBrowser:setupFileManagerDisplayMode("mosaic_image")
+
+        assert.is_not_equal(original_init, PathChooser.init)
+    end)
+
     it("patches FileChooser behavior only on the owned file manager instance", function()
         local update_item_table = CoverBrowser.getUpdateItemTableFunc("mosaic_image")
         local file_chooser = {
@@ -167,6 +205,83 @@ describe("Main Menu Scoping", function()
         assert.equal(CoverMenu.updateItems, file_chooser.updateItems)
         assert.equal(CoverMenu.onCloseWidget, file_chooser.onCloseWidget)
         assert.equal(CoverMenu.genItemTable, file_chooser.genItemTable)
+    end)
+
+    it("configures PathChooser instances through the wrapped init", function()
+        local PathChooser = package.loaded["ui/widget/pathchooser"]
+        local finish_calls = 0
+        local original_finish = CoverMenu.finishMenuInit
+
+        CoverBrowser.ui = {
+            file_chooser = {
+                _recalculateDimen = function() end,
+                switchItemTable = function() end,
+            },
+        }
+        CoverBrowser.refreshFileManagerInstance = function() end
+        CoverBrowser:setupFileManagerDisplayMode("list_image_meta")
+
+        CoverMenu.finishMenuInit = function(self)
+            finish_calls = finish_calls + 1
+        end
+
+        local chooser = {
+            name = "pathchooser",
+            title_bar = { title = "Choose folder" },
+            switchItemTable = function() end,
+        }
+        PathChooser.init(chooser)
+
+        CoverMenu.finishMenuInit = original_finish
+
+        assert.is_true(chooser._pathchooser_init_original)
+        assert.equal(CoverMenu.updateItems, chooser.updateItems)
+        assert.equal(CoverMenu.onCloseWidget, chooser.onCloseWidget)
+        assert.equal(CoverMenu.genItemTable, chooser.genItemTable)
+        assert.equal("list", chooser.display_mode_type)
+        assert.equal(1, finish_calls)
+    end)
+
+    it("keeps the up-folder entry on the first PathChooser render", function()
+        local PathChooser = package.loaded["ui/widget/pathchooser"]
+        local original_gen_item_table = CoverMenu._FileChooser_genItemTable_orig
+        local original_finish = CoverMenu.finishMenuInit
+
+        CoverBrowser.ui = {
+            file_chooser = {
+                _recalculateDimen = function() end,
+                switchItemTable = function() end,
+            },
+        }
+        CoverBrowser.refreshFileManagerInstance = function() end
+        CoverBrowser:setupFileManagerDisplayMode("list_image_meta")
+
+        CoverMenu._FileChooser_genItemTable_orig = function()
+            return {
+                { text = "Current folder helper", path = "/books/.", bold = true },
+                { text = "⬆ ../", path = "/books/..", is_go_up = true },
+                { text = "file1.epub", path = "/books/file1.epub", is_file = true },
+            }
+        end
+        CoverMenu.finishMenuInit = function() end
+
+        local chooser = {
+            name = "pathchooser",
+            title = true,
+            path = "/books",
+            select_directory = true,
+            select_file = false,
+            _run_filechooser_init = function(self)
+                self._initial_item_table = self:genItemTable({}, {}, self.path)
+            end,
+        }
+
+        PathChooser.init(chooser)
+        CoverMenu._FileChooser_genItemTable_orig = original_gen_item_table
+        CoverMenu.finishMenuInit = original_finish
+
+        assert.equal(3, #chooser._initial_item_table)
+        assert.is_true(chooser._initial_item_table[2].is_go_up)
     end)
 
     it("uses shared menu wiring for owned and hijacked menu instances", function()
@@ -405,5 +520,27 @@ describe("Main Menu Scoping", function()
         assert.is_nil(file_chooser.display_mode_type)
         assert.equal(package.loaded["ui/widget/filechooser"].updateItems, file_chooser.updateItems)
         assert.equal(package.loaded["ui/widget/filechooser"].genItemTable, file_chooser.genItemTable)
+    end)
+
+    it("restores shared PathChooser init when returning to classic mode", function()
+        local PathChooser = package.loaded["ui/widget/pathchooser"]
+        local original_init = PathChooser.init
+
+        CoverBrowser.ui = {
+            file_chooser = {
+                updateItems = function() end,
+                onCloseWidget = function() end,
+                genItemTable = function() end,
+                _recalculateDimen = function() end,
+                switchItemTable = function() end,
+            },
+        }
+        CoverBrowser.refreshFileManagerInstance = function() end
+
+        CoverBrowser:setupFileManagerDisplayMode("list_image_meta")
+        assert.is_not_equal(original_init, PathChooser.init)
+
+        CoverBrowser:setupFileManagerDisplayMode(nil)
+        assert.equal(original_init, PathChooser.init)
     end)
 end)

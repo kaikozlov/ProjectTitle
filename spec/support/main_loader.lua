@@ -116,6 +116,9 @@ local function load_main(opts)
         onCloseWidget = function() end,
         genItemTable = function() end,
     }
+    package.loaded["ui/widget/pathchooser"] = {
+        init = function() end,
+    }
     package.loaded["apps/filemanager/filemanager"] = {
         setupLayout = function() end,
     }
