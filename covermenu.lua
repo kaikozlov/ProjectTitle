@@ -784,9 +784,23 @@ function CoverMenu:refreshFooterText()
     end)
 end
 
+function CoverMenu:onFrontlightStateChanged()
+    self:refreshFooterText()
+end
+
+CoverMenu.onCharging = CoverMenu.onFrontlightStateChanged
+CoverMenu.onNotCharging = CoverMenu.onFrontlightStateChanged
+CoverMenu.onNetworkConnected = CoverMenu.onFrontlightStateChanged
+CoverMenu.onNetworkDisconnected = CoverMenu.onFrontlightStateChanged
+
 function CoverMenu.finishMenuInit(self)
     self.scheduleFooterRefresh = CoverMenu.scheduleFooterRefresh
     self.refreshFooterText = CoverMenu.refreshFooterText
+    self.onFrontlightStateChanged = CoverMenu.onFrontlightStateChanged
+    self.onCharging = CoverMenu.onCharging
+    self.onNotCharging = CoverMenu.onNotCharging
+    self.onNetworkConnected = CoverMenu.onNetworkConnected
+    self.onNetworkDisconnected = CoverMenu.onNetworkDisconnected
     -- pagination controls
     self.page_info = HorizontalGroup:new {
         self.page_info_first_chev,

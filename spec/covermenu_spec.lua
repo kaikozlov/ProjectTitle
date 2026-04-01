@@ -1108,6 +1108,68 @@ describe("CoverMenu", function()
             assert.equal(0, set_text_calls)
             assert.equal(0, dirty_calls)
         end)
+
+        it("refreshes the footer when the frontlight state changes", function()
+            local dirty_calls = 0
+            local footer_text = "Warmth 10%"
+            local UIManager = package.loaded["ui/uimanager"]
+            local ptutil = package.loaded["ptutil"]
+            local filemanagerutil = package.loaded["apps/filemanager/filemanagerutil"]
+            local filemanagershortcuts = package.loaded["apps/filemanager/filemanagershortcuts"]
+            local original_schedule_in = UIManager.scheduleIn
+            local original_set_dirty = UIManager.setDirty
+            local original_format_footer_text = ptutil.formatFooterText
+            local original_get_setting = BookInfoManager.getSetting
+            local original_get_default_dir = filemanagerutil.getDefaultDir
+            local original_has_folder_shortcut = filemanagershortcuts.hasFolderShortcut
+
+            UIManager.scheduleIn = function() end
+            UIManager.setDirty = function()
+                dirty_calls = dirty_calls + 1
+            end
+            ptutil.formatFooterText = function()
+                return footer_text
+            end
+            filemanagerutil.getDefaultDir = function()
+                return "/default"
+            end
+            filemanagershortcuts.hasFolderShortcut = function()
+                return false
+            end
+            BookInfoManager.getSetting = function(_, key)
+                if key == "replace_footer_text" then
+                    return true
+                end
+                return original_get_setting(BookInfoManager, key)
+            end
+
+            local menu = {
+                show_parent = {},
+                root_path = "/books",
+                onHome = function() end,
+                registerKeyEvents = function() end,
+                _pt_filechooser_display_mode = "list_image_meta",
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+            menu.file_chooser.path = "/books"
+            menu.file_chooser.cur_folder_text.text = "Warmth 0%"
+            dirty_calls = 0
+            footer_text = "Warmth 10%"
+
+            menu.file_chooser:onFrontlightStateChanged()
+
+            UIManager.scheduleIn = original_schedule_in
+            UIManager.setDirty = original_set_dirty
+            ptutil.formatFooterText = original_format_footer_text
+            BookInfoManager.getSetting = original_get_setting
+            filemanagerutil.getDefaultDir = original_get_default_dir
+            filemanagershortcuts.hasFolderShortcut = original_has_folder_shortcut
+
+            assert.equal("Warmth 10%", menu.file_chooser.cur_folder_text.text)
+            assert.equal(1, dirty_calls)
+        end)
     end)
 
     describe("setupLayout", function()
