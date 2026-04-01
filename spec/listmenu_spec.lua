@@ -461,6 +461,39 @@ describe("ListMenu", function()
             assert.is_true(table.concat(texts, "\n"):find("Test Author", 1, true) ~= nil)
         end)
 
+        it("uses the configured list renderer for chooser folders", function()
+            local item = ListMenuItem:new {
+                height = 48,
+                width = 240,
+                entry = { text = "Folder/", path = "/chooser/folder" },
+                text = "Folder/",
+                show_parent = {},
+                mandatory = "2 \u{F114} 6 \u{F016}",
+                dimen = { x = 0, y = 0, w = 240, h = 48, copy = function(self) return { x = self.x, y = self.y, w = self.w, h = self.h } end },
+                menu = {
+                    render_context = {
+                        is_pathchooser = true,
+                        is_touch_device = true,
+                        force_focus_indicator = false,
+                        disable_auto_foldercovers = true,
+                    },
+                    getBookInfo = function()
+                        return { been_opened = false, status = "unread" }
+                    end,
+                    _bookinfo_batch = {},
+                },
+                do_cover_image = true,
+                do_filename_only = false,
+                do_hint_opened = false,
+            }
+
+            local texts = collect_texts(item._underline_container[1])
+
+            assert.is_true(has_widget_named(item._underline_container[1], "ImageWidget"))
+            assert.is_true(table.concat(texts, "\n"):find("Folders", 1, true) ~= nil)
+            assert.is_true(table.concat(texts, "\n"):find("Books", 1, true) ~= nil)
+        end)
+
         it("prefetches only file entries for the page batch", function()
             local render_context = mock_ui.default_render_context()
             local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch

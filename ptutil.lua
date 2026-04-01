@@ -971,11 +971,22 @@ function ptutil.showProgressBar(pages, render_context)
 end
 
 function ptutil.isPathChooser(self)
-    local is_pathchooser = false
-    if (self.title_bar and self.title_bar.title ~= "") or (self.menu and self.menu.title ~= "") then
-        is_pathchooser = true
+    if self == nil then
+        return false
     end
-    return is_pathchooser
+    if self._pt_pathchooser ~= nil then
+        return self._pt_pathchooser == true
+    end
+    if self.render_context and self.render_context.is_pathchooser ~= nil then
+        return self.render_context.is_pathchooser == true
+    end
+    if self.menu and self.menu._pt_pathchooser ~= nil then
+        return self.menu._pt_pathchooser == true
+    end
+    if self.menu and self.menu.render_context and self.menu.render_context.is_pathchooser ~= nil then
+        return self.menu.render_context.is_pathchooser == true
+    end
+    return ((self.title_bar and self.title_bar.title ~= "") or (self.menu and self.menu.title ~= "")) == true
 end
 
 function ptutil.formatAuthors(authors, authors_limit)

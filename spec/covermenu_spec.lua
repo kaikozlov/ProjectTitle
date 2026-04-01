@@ -694,7 +694,7 @@ describe("CoverMenu", function()
                 },
                 screen_w = 600,
                 render_context = { is_pathchooser = false },
-                _pt_is_pathchooser = false,
+                _pt_pathchooser = false,
                 _pt_meta_browse_mode = false,
             }
             for k, v in pairs(CoverMenu) do second_menu[k] = v end

@@ -74,7 +74,7 @@ end
 local function shouldRefreshFooterLive(menu)
     return BookInfoManager:getSetting("replace_footer_text")
         and menu
-        and menu._pt_is_pathchooser ~= true
+        and not ptutil.isPathChooser(menu)
         and menu.cur_folder_text
         and type(menu.path) == "string"
         and menu.path ~= ""
@@ -121,12 +121,18 @@ function CoverMenu.configureDisplayMenu(menu, display_mode, opts)
     local include_gen_item_table = opts.include_gen_item_table
     local do_hint_opened = opts.do_hint_opened
     local prepare_menu = opts.prepare_menu
+    local is_pathchooser = opts.is_pathchooser
 
     if menu.onCloseWidget and menu.onCloseWidget ~= CoverMenu.onCloseWidget then
         menu._pt_onCloseWidget_orig = menu.onCloseWidget
     end
 
     menu.display_mode_type = display_mode and display_mode:gsub("_.*", "") or nil
+    if is_pathchooser ~= nil then
+        menu._pt_pathchooser = is_pathchooser == true
+    elseif menu._pt_pathchooser == nil then
+        menu._pt_pathchooser = ptutil.isPathChooser(menu)
+    end
 
     if not display_mode then
         menu.updateItems = CoverMenu._FileChooser_updateItems_orig
@@ -200,16 +206,14 @@ function CoverMenu.configureFileChooser(file_chooser, display_mode)
     CoverMenu.configureDisplayMenu(file_chooser, display_mode, {
         include_gen_item_table = true,
         do_hint_opened = display_mode and true or nil,
+        is_pathchooser = false,
     })
 end
 
 -- Build a render context containing all settings needed for rendering
 -- This avoids repeated getSetting() calls during the render loop
 function CoverMenu:buildRenderContext()
-    local is_pathchooser = self._pt_force_is_pathchooser
-    if is_pathchooser == nil then
-        is_pathchooser = ptutil.isPathChooser(self)
-    end
+    local is_pathchooser = ptutil.isPathChooser(self)
     return {
         -- Display settings
         hide_file_info = BookInfoManager:getSetting("hide_file_info"),
@@ -303,7 +307,7 @@ function CoverMenu:updateItems(select_number, no_recalculate_dimen)
     -- use the cover_specs set for FileBrowser, and not those from History.
     -- Hopefully, we get self.path=nil when called from History
     local is_pathchooser = self.render_context and self.render_context.is_pathchooser == true
-    self._pt_is_pathchooser = is_pathchooser
+    self._pt_pathchooser = is_pathchooser
     if self.path and is_pathchooser == false then
         if self._pt_current_path ~= nil and util.directoryExists(self._pt_current_path) then
             self._pt_previous_path = self._pt_current_path
@@ -422,7 +426,7 @@ function CoverMenu:onCloseWidget()
     BookInfoManager:terminateBackgroundJobs()
     BookInfoManager:closeDbConnection() -- sqlite connection no more needed
     BookInfoManager:cleanUp()           -- clean temporary resources
-    self._pt_is_pathchooser = false
+    self._pt_pathchooser = nil
     self._pt_current_path = nil
     self._pt_previous_path = nil
 
@@ -465,7 +469,7 @@ end
 
 function CoverMenu:genItemTable(dirs, files, path)
     local is_pathchooser = ptutil.isPathChooser(self)
-    self._pt_is_pathchooser = is_pathchooser
+    self._pt_pathchooser = is_pathchooser
     local item_table = CoverMenu._FileChooser_genItemTable_orig(self, dirs, files, path) or {}
     if not is_pathchooser then
         local filtered = {}
@@ -486,6 +490,7 @@ function CoverMenu:genItemTable(dirs, files, path)
     end
     return item_table
 end
+
 function CoverMenu:setupLayout()
     self.show_parent = self.show_parent or self
     local folder_up_requires_hold = BookInfoManager:getSetting("folder_up_requires_hold")
@@ -786,7 +791,7 @@ function CoverMenu.prepareMenuInit(self)
     self.render_context = CoverMenu.buildRenderContext(self)
     self._pt_previous_path = nil
     self._pt_current_path = nil
-    self._pt_is_pathchooser = self.render_context and self.render_context.is_pathchooser == true or false
+    self._pt_pathchooser = self.render_context and self.render_context.is_pathchooser == true or false
 
     -- Initialize widget pool for reusing common widgets
     self.widget_pool = ptutil.WidgetPool:new({ max_per_type = 30 })
@@ -824,7 +829,7 @@ function CoverMenu:refreshFooterText()
 
     self.cur_folder_text:setMaxWidth(getFooterTextMaxWidth(self, getFooterPageControlsAlignment()))
     local footertxt = ptutil.formatFooterText(self.footer_config, self._manager, self.path, filemanagerutil.getDefaultDir(),
-        FileManagerShortcuts:hasFolderShortcut(self.path), self._pt_meta_browse_mode)
+        FileManagerShortcuts:hasFolderShortcut(self.path), G_reader_settings:readSetting("show_flat_view"))
     if footertxt == self.cur_folder_text.text then
         return
     end
@@ -1029,11 +1034,7 @@ function CoverMenu.finishMenuInit(self)
 
     -- test to see what style to draw (pathchooser vs one of our fancy modes)
     -- Use cached value from render_context if available, otherwise compute it
-    if self.render_context and self.render_context.is_pathchooser ~= nil then
-        self._pt_is_pathchooser = self.render_context.is_pathchooser
-    else
-        self._pt_is_pathchooser = ptutil.isPathChooser(self)
-    end
+    self._pt_pathchooser = ptutil.isPathChooser(self)
 
     if self.item_table.current then
         self.page = self:getPageNumber(self.item_table.current)
@@ -1054,12 +1055,8 @@ function CoverMenu:updatePageInfo(select_number)
     end
     self.page_info_text:setText(curpagetxt)
 
-    local is_pathchooser = self.render_context and self.render_context.is_pathchooser
-    if is_pathchooser == nil then
-        is_pathchooser = self._pt_is_pathchooser
-    else
-        self._pt_is_pathchooser = is_pathchooser
-    end
+    local is_pathchooser = ptutil.isPathChooser(self)
+    self._pt_pathchooser = is_pathchooser
 
     if not is_pathchooser and self.cur_folder_text and type(self.path) == "string" and self.path ~= '' then
         self.cur_folder_text:setMaxWidth(getFooterTextMaxWidth(self, getFooterPageControlsAlignment()))

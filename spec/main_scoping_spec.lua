@@ -207,6 +207,27 @@ describe("Main Menu Scoping", function()
         assert.equal(CoverMenu.genItemTable, file_chooser.genItemTable)
     end)
 
+    it("marks the owned file manager instance as non-pathchooser during activation", function()
+        local file_chooser = {
+            title_bar = { title = "Home" },
+            updateItems = function() end,
+            onCloseWidget = function() end,
+            genItemTable = function() end,
+            _recalculateDimen = function() end,
+            switchItemTable = function() end,
+        }
+        CoverBrowser.ui = {
+            file_chooser = file_chooser,
+        }
+        CoverBrowser.refreshFileManagerInstance = function() end
+
+        CoverBrowser:setupFileManagerDisplayMode("list_image_meta")
+
+        local context = CoverMenu.buildRenderContext(file_chooser)
+
+        assert.is_false(context.is_pathchooser)
+    end)
+
     it("configures PathChooser instances through the wrapped init", function()
         local PathChooser = package.loaded["ui/widget/pathchooser"]
         local finish_calls = 0
@@ -240,6 +261,36 @@ describe("Main Menu Scoping", function()
         assert.equal(CoverMenu.genItemTable, chooser.genItemTable)
         assert.equal("list", chooser.display_mode_type)
         assert.equal(1, finish_calls)
+    end)
+
+    it("reuses the wrapped PathChooser state for later render contexts", function()
+        local PathChooser = package.loaded["ui/widget/pathchooser"]
+        local original_finish = CoverMenu.finishMenuInit
+
+        CoverBrowser.ui = {
+            file_chooser = {
+                _recalculateDimen = function() end,
+                switchItemTable = function() end,
+            },
+        }
+        CoverBrowser.refreshFileManagerInstance = function() end
+        CoverBrowser:setupFileManagerDisplayMode("list_image_meta")
+
+        CoverMenu.finishMenuInit = function() end
+
+        local chooser = {
+            name = "pathchooser",
+            title_bar = { title = "Choose folder" },
+            switchItemTable = function() end,
+        }
+        PathChooser.init(chooser)
+        chooser.title_bar.title = ""
+
+        local context = CoverMenu.buildRenderContext(chooser)
+
+        CoverMenu.finishMenuInit = original_finish
+
+        assert.is_true(context.is_pathchooser)
     end)
 
     it("keeps the up-folder entry on the first PathChooser render", function()

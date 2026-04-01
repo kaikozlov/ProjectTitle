@@ -46,7 +46,7 @@ local function resolveIsPathChooser(subject)
         render_context = subject.menu.render_context
     end
     if render_context and render_context.is_pathchooser ~= nil then
-        return render_context.is_pathchooser
+        return render_context.is_pathchooser == true
     end
     return ptutil.isPathChooser(subject)
 end
@@ -175,6 +175,7 @@ function ListMenuItem:update()
     self.is_pathchooser = resolveIsPathChooser(self)
     local is_pathchooser = self.is_pathchooser
     local render_context = (self.menu and self.menu.render_context) or {}
+    local is_special_path_row = self.entry.is_go_up == true or self.entry.bold == true
 
     self.is_directory = not (self.entry.is_file or self.entry.file)
     if self.is_directory then
@@ -183,7 +184,7 @@ function ListMenuItem:update()
         local wright_width = 0
         local wright_items = { align = "right" }
 
-        if is_pathchooser == false then
+        if not self.do_filename_only and not is_special_path_row then
             -- replace the stock tiny file and folder glyphs with text
             local folder_text = _("Folder")
             local file_text = _("Book")
@@ -230,7 +231,7 @@ function ListMenuItem:update()
         local pad_width = Screen:scaleBySize(10) -- on the left, in between, and on the right
         local folder_cover
         -- add cover-art sized icon for folders
-        if self.do_cover_image and is_pathchooser == false then
+        if self.do_cover_image and not is_special_path_row then
             local subfolder_cover_image
             -- check for folder image
             subfolder_cover_image = ptutil.getFolderCover(self.filepath, max_img_w * 0.82, max_img_h, self.entry.pt_cover_path)
@@ -265,7 +266,7 @@ function ListMenuItem:update()
             self._has_cover_image = true
         else
             local no_folder_width = 5
-            -- extra padding in filename only mode, but not in pathchooser
+            -- extra padding in filename only mode
             if self.do_filename_only then no_folder_width = 15 end
             folder_cover = HorizontalSpan:new { width = Screen:scaleBySize(no_folder_width) }
         end
@@ -278,8 +279,7 @@ function ListMenuItem:update()
         wlefttext = BD.directory(wlefttext)
 
         local folderfont = ptutil.good_serif
-        -- style folder names differently in pathchooser
-        if is_pathchooser or self.do_filename_only then
+        if self.do_filename_only or is_special_path_row then
             wlefttext = BD.directory(self.text)
             folderfont = ptutil.good_sans
         end

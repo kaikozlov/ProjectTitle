@@ -202,6 +202,22 @@ describe("ptutil Formatting Functions", function()
     end)
 
     describe("isPathChooser", function()
+        it("prefers an explicit cached chooser flag over title heuristics", function()
+            local obj = {
+                _pt_pathchooser = false,
+                title_bar = { title = "Select a folder" },
+            }
+            assert.is_false(ptutil.isPathChooser(obj))
+        end)
+
+        it("uses an explicit cached chooser flag when present", function()
+            local obj = {
+                _pt_pathchooser = true,
+                title_bar = { title = "" },
+            }
+            assert.is_true(ptutil.isPathChooser(obj))
+        end)
+
         it("returns false when no title_bar or menu", function()
             assert.is_false(ptutil.isPathChooser({}))
         end)

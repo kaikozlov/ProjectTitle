@@ -47,7 +47,7 @@ local function resolveIsPathChooser(subject)
         render_context = subject.menu.render_context
     end
     if render_context and render_context.is_pathchooser ~= nil then
-        return render_context.is_pathchooser
+        return render_context.is_pathchooser == true
     end
     return ptutil.isPathChooser(subject)
 end

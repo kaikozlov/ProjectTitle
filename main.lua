@@ -1273,13 +1273,14 @@ function ProjectTitle:setupFileManagerDisplayMode(display_mode)
     _modified_widgets["filesearcher"].updateItemTable = ProjectTitle.getUpdateItemTableFunc(display_mode)
     ProjectTitle.addFileDialogButtons("filemanager")
     PathChooser.init = function(this)
-        this._pt_force_is_pathchooser = true
+        this._pt_pathchooser = true
         local original_filechooser_init = FileChooser.init
         FileChooser.init = function(path_chooser)
             CoverMenu.configureDisplayMenu(path_chooser, display_mode, {
                 include_gen_item_table = true,
                 do_hint_opened = true,
                 prepare_menu = true,
+                is_pathchooser = true,
             })
             local result = original_filechooser_init(path_chooser)
             CoverMenu.finishMenuInit(path_chooser)
