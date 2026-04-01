@@ -148,7 +148,9 @@ describe("CoverMenu", function()
                 return false
             end,
         }
-        package.loaded["apps/filemanager/filemanagershortcuts"] = {}
+        package.loaded["apps/filemanager/filemanagershortcuts"] = {
+            hasFolderShortcut = function() return false end,
+        }
         package.loaded["apps/filemanager/filemanagermenu"] = {
             new = function(self, o) return o or {} end
         }
@@ -991,6 +993,54 @@ describe("CoverMenu", function()
             assert.is_not_nil(menu.file_chooser.footer_refresh_action)
         end)
 
+        it("refreshes the footer immediately after setup so device info is visible on first show", function()
+            local UIManager = package.loaded["ui/uimanager"]
+            local ptutil = package.loaded["ptutil"]
+            local filemanagerutil = package.loaded["apps/filemanager/filemanagerutil"]
+            local filemanagershortcuts = package.loaded["apps/filemanager/filemanagershortcuts"]
+            local original_schedule_in = UIManager.scheduleIn
+            local original_get_setting = BookInfoManager.getSetting
+            local original_format_footer_text = ptutil.formatFooterText
+            local original_get_default_dir = filemanagerutil.getDefaultDir
+            local original_has_folder_shortcut = filemanagershortcuts.hasFolderShortcut
+
+            UIManager.scheduleIn = function() end
+            ptutil.formatFooterText = function()
+                return "Clock Wi-Fi Battery"
+            end
+            filemanagerutil.getDefaultDir = function()
+                return "/default"
+            end
+            filemanagershortcuts.hasFolderShortcut = function()
+                return false
+            end
+            BookInfoManager.getSetting = function(_, key)
+                if key == "replace_footer_text" then
+                    return true
+                end
+                return original_get_setting(BookInfoManager, key)
+            end
+
+            local menu = {
+                show_parent = {},
+                root_path = "/books",
+                onHome = function() end,
+                registerKeyEvents = function() end,
+                _pt_filechooser_display_mode = "list_image_meta",
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+
+            UIManager.scheduleIn = original_schedule_in
+            ptutil.formatFooterText = original_format_footer_text
+            filemanagerutil.getDefaultDir = original_get_default_dir
+            filemanagershortcuts.hasFolderShortcut = original_has_folder_shortcut
+            BookInfoManager.getSetting = original_get_setting
+
+            assert.equal("Clock Wi-Fi Battery", menu.file_chooser.cur_folder_text.text)
+        end)
+
         it("does not redraw the footer when the refreshed text is unchanged", function()
             local scheduled_callback
             local dirty_calls = 0
@@ -1044,6 +1094,7 @@ describe("CoverMenu", function()
                 set_text_calls = set_text_calls + 1
             end
             menu.file_chooser.cur_folder_text.setMaxWidth = function() end
+            dirty_calls = 0
 
             scheduled_callback()
 

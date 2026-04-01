@@ -35,6 +35,14 @@ local function mock_widget(name)
 
     function Widget:paintTo() end
 
+    function Widget:setText(text)
+        self.text = text
+    end
+
+    function Widget:setMaxWidth(width)
+        self.max_width = width
+    end
+
     function Widget:getBaseline() return 15 end
     function Widget:getTextHeight() return 20 end
     function Widget:getLineHeight() return 20 end
@@ -271,7 +279,36 @@ local function setup_mocks()
             getWidth = function() return 600 end,
             getHeight = function() return 800 end
         },
-        isTouchDevice = function() return true end
+        isTouchDevice = function() return true end,
+        hasBattery = function() return false end,
+        hasAuxBattery = function() return false end,
+        hasFrontlight = function() return false end,
+        hasNaturalLight = function() return false end,
+        isCervantes = function() return false end,
+        isKobo = function() return false end,
+        getPowerDevice = function()
+            return {
+                getCapacity = function() return 100 end,
+                getBatterySymbol = function() return "=" end,
+                isCharged = function() return false end,
+                isCharging = function() return false end,
+                isAuxBatteryConnected = function() return false end,
+                getAuxCapacity = function() return 100 end,
+                isAuxCharged = function() return false end,
+                isAuxCharging = function() return false end,
+                isFrontlightOn = function() return false end,
+                frontlightIntensity = function() return 0 end,
+                frontlightWarmth = function() return 0 end,
+            }
+        end,
+    }
+
+    package.loaded["datetime"] = {
+        secondsToHour = function() return "12:00" end,
+    }
+
+    package.loaded["ui/network/manager"] = {
+        isWifiOn = function() return false end,
     }
     
     package.loaded["docsettings"] = {
@@ -309,7 +346,12 @@ local function setup_mocks()
     }
     
     package.loaded["apps/filemanager/filemanagerutil"] = {
-        splitFileNameType = function(f) return f, "epub" end
+        splitFileNameType = function(f) return f, "epub" end,
+        getDefaultDir = function() return "/default" end,
+    }
+
+    package.loaded["apps/filemanager/filemanagershortcuts"] = {
+        hasFolderShortcut = function() return false end,
     }
     
     package.loaded["logger"] = {
@@ -497,7 +539,14 @@ local function setup_mocks()
     
     -- Mock G_reader_settings
     _G.G_reader_settings = {
-        readSetting = function() return nil end
+        readSetting = function() return nil end,
+        isTrue = function() return false end,
+        nilOrTrue = function(_, _, default)
+            if default ~= nil then
+                return default
+            end
+            return true
+        end,
     }
 
     -- Clear module caches to ensure fresh loads after mocks are set up

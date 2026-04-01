@@ -940,6 +940,7 @@ function CoverMenu.finishMenuInit(self)
     if not self.path_items then -- not FileChooser
         self:updateItems(1, true)
     end
+    self:refreshFooterText()
     self:scheduleFooterRefresh()
 end
 
