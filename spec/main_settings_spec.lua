@@ -4,12 +4,35 @@ local setup_mocks = require("spec.support.mock_ui")
 describe("Main Settings", function()
     local CoverBrowser
     local BookInfoManager
+
+    local function find_menu_item(items, labels)
+        local current_items = items
+        local item
+        for _, label in ipairs(labels) do
+            item = nil
+            for _, candidate in ipairs(current_items or {}) do
+                if candidate.text == label then
+                    item = candidate
+                    break
+                end
+            end
+            if not item then
+                return nil
+            end
+            current_items = item.sub_item_table
+        end
+        return item
+    end
     
     setup(function()
         if not _G.unpack then _G.unpack = table.unpack end
         setup_mocks()
         -- Mock other dependencies of main.lua
-        package.loaded["ui/uimanager"] = { nextTick = function() end, show = function() end }
+        package.loaded["ui/uimanager"] = {
+            nextTick = function() end,
+            show = function() end,
+            askForRestart = function() end,
+        }
         package.loaded["ui/widget/infomessage"] = { new = function() return {} end }
         package.loaded["version"] = { getNormalizedCurrentVersion = function() return 202510000000, "commit" end }
         package.loaded["ui/widget/bookstatuswidget"] = {}
@@ -248,5 +271,173 @@ describe("Main Settings", function()
         assert.equal(new_title_bar, CoverBrowser.ui.file_chooser.custom_title_bar)
         assert.equal(new_title_bar, CoverBrowser.ui.file_chooser.title_bar)
         assert.is_true(updated)
+    end)
+
+    it("updates the author-series order through the settings menu", function()
+        local updated = false
+        BookInfoManager:saveSetting("author_series_order", "author_first")
+
+        CoverBrowser.ui = {
+            file_chooser = {
+                nb_cols_portrait = 3,
+                nb_rows_portrait = 4,
+                nb_cols_landscape = 4,
+                nb_rows_landscape = 3,
+                files_per_page = 10,
+                updateItems = function(_, page, force_refresh)
+                    updated = page == 1 and force_refresh == true
+                end,
+            }
+        }
+        CoverBrowser.modes = { { "Mode 1", "mode1" } }
+
+        local menu_items = {}
+        CoverBrowser:addToMainMenu(menu_items)
+
+        local author_first = find_menu_item(menu_items.filemanager_display_mode.sub_item_table, {
+            "Advanced settings",
+            "Book display",
+            "Author and series order",
+            "Author first",
+        })
+        local series_first = find_menu_item(menu_items.filemanager_display_mode.sub_item_table, {
+            "Advanced settings",
+            "Book display",
+            "Author and series order",
+            "Series first",
+        })
+
+        assert.is_not_nil(author_first)
+        assert.is_not_nil(series_first)
+        assert.equal("author_first", BookInfoManager:getSetting("author_series_order"))
+        assert.is_true(author_first.checked_func())
+
+        series_first.callback()
+
+        assert.equal("series_first", BookInfoManager:getSetting("author_series_order"))
+        assert.is_true(series_first.checked_func())
+        assert.is_false(author_first.checked_func())
+        assert.is_true(updated)
+    end)
+
+    it("requests restart when changing footer page controls position", function()
+        local restart_requested = false
+        local UIManager = package.loaded["ui/uimanager"]
+        local original_ask_for_restart = UIManager.askForRestart
+        UIManager.askForRestart = function()
+            restart_requested = true
+        end
+
+        CoverBrowser.ui = {
+            file_chooser = {
+                nb_cols_portrait = 3,
+                nb_rows_portrait = 4,
+                nb_cols_landscape = 4,
+                nb_rows_landscape = 3,
+                files_per_page = 10,
+                updateItems = function() end,
+            }
+        }
+        CoverBrowser.modes = { { "Mode 1", "mode1" } }
+
+        local menu_items = {}
+        CoverBrowser:addToMainMenu(menu_items)
+
+        local center = find_menu_item(menu_items.filemanager_display_mode.sub_item_table, {
+            "Advanced settings",
+            "Footer",
+            "Page controls position",
+            "Center",
+        })
+
+        assert.is_not_nil(center)
+
+        center.callback()
+
+        UIManager.askForRestart = original_ask_for_restart
+
+        assert.equal("center", BookInfoManager:getSetting("footer_page_controls_alignment"))
+        assert.is_true(restart_requested)
+    end)
+
+    it("toggles footer device info items through the settings menu", function()
+        local restart_requested = false
+        local UIManager = package.loaded["ui/uimanager"]
+        local original_ask_for_restart = UIManager.askForRestart
+        UIManager.askForRestart = function()
+            restart_requested = true
+        end
+
+        CoverBrowser.ui = {
+            file_chooser = {
+                nb_cols_portrait = 3,
+                nb_rows_portrait = 4,
+                nb_cols_landscape = 4,
+                nb_rows_landscape = 3,
+                files_per_page = 10,
+                updateItems = function() end,
+            }
+        }
+        CoverBrowser.modes = { { "Mode 1", "mode1" } }
+
+        local menu_items = {}
+        CoverBrowser:addToMainMenu(menu_items)
+
+        local clock = find_menu_item(menu_items.filemanager_display_mode.sub_item_table, {
+            "Advanced settings",
+            "Footer",
+            "Device info items",
+            "Clock",
+        })
+
+        assert.is_not_nil(clock)
+        assert.is_nil(BookInfoManager:getSetting("footer_show_clock"))
+
+        clock.callback()
+
+        UIManager.askForRestart = original_ask_for_restart
+
+        assert.equal("Y", BookInfoManager:getSetting("footer_show_clock"))
+        assert.is_true(restart_requested)
+    end)
+
+    it("stores the KOReader new status from the library status filter menu", function()
+        local restart_requested = false
+        local UIManager = package.loaded["ui/uimanager"]
+        local original_ask_for_restart = UIManager.askForRestart
+        UIManager.askForRestart = function()
+            restart_requested = true
+        end
+
+        CoverBrowser.ui = {
+            file_chooser = {
+                nb_cols_portrait = 3,
+                nb_rows_portrait = 4,
+                nb_cols_landscape = 4,
+                nb_rows_landscape = 3,
+                files_per_page = 10,
+                updateItems = function() end,
+            }
+        }
+        CoverBrowser.modes = { { "Mode 1", "mode1" } }
+
+        local menu_items = {}
+        CoverBrowser:addToMainMenu(menu_items)
+
+        local new_status = find_menu_item(menu_items.filemanager_display_mode.sub_item_table, {
+            "Advanced settings",
+            "Library mode",
+            "Read status filter",
+            "New",
+        })
+
+        assert.is_not_nil(new_status)
+
+        new_status.callback()
+
+        UIManager.askForRestart = original_ask_for_restart
+
+        assert.equal("new", BookInfoManager:getSetting("library_status_filter"))
+        assert.is_true(restart_requested)
     end)
 end)

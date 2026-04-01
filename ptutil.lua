@@ -365,6 +365,24 @@ local function safe_get_face(font_name, size)
     return face
 end
 
+local function get_any_loaded_face()
+    if not Font then
+        Font = require("ui/font")
+    end
+
+    if type(Font.faces) ~= "table" then
+        return nil
+    end
+
+    for _, face in pairs(Font.faces) do
+        if face then
+            return face
+        end
+    end
+
+    return nil
+end
+
 -- Check if custom fonts can be loaded (done once, cached)
 local function check_fonts_available()
     if fonts_available ~= nil then
@@ -393,7 +411,7 @@ end
 -- This prevents crashes on Desktop Linux, macOS, AppImage, Docker, etc.
 -- @param font_name The font name/path to load
 -- @param size The font size
--- @return A valid font face (never nil)
+-- @return The best available font face, reusing an already-loaded KOReader face as a last resort
 function ptutil.getFontFace(font_name, size)
     -- If custom fonts are available, use them directly
     if check_fonts_available() then
@@ -428,7 +446,13 @@ function ptutil.getFontFace(font_name, size)
         return last_known_good_core_face
     end
 
-    -- This should never happen, but log it if it does
+    local loaded_face = get_any_loaded_face()
+    if loaded_face then
+        logger.warn(ptdbg.logprefix, "Reusing previously loaded KOReader font for:", font_name)
+        return loaded_face
+    end
+
+    -- This should never happen in a healthy KOReader runtime.
     logger.err(ptdbg.logprefix, "CRITICAL: No fonts available at all for:", font_name)
     return nil
 end

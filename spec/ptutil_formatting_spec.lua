@@ -423,5 +423,28 @@ describe("ptutil Formatting Functions", function()
             assert.is_not_nil(second_face)
             assert.equal("cfont", second_face.name)
         end)
+
+        it("reuses an already loaded KOReader face when all font lookups fail", function()
+            local ui_font = package.loaded["ui/font"]
+            local original_get_face = ui_font.getFace
+            local original_faces = ui_font.faces
+            local cached_face = { name = "cached-face", size = 16 }
+
+            ui_font.faces = {
+                cached = cached_face,
+            }
+            ui_font.getFace = function()
+                return nil
+            end
+
+            ptutil.resetFontCheck()
+            local face = ptutil.getFontFace(ptutil.good_serif, 18)
+
+            ui_font.getFace = original_get_face
+            ui_font.faces = original_faces
+            ptutil.resetFontCheck()
+
+            assert.equal(cached_face, face)
+        end)
     end)
 end)

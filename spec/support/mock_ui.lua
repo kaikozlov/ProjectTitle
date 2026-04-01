@@ -284,6 +284,25 @@ local function setup_mocks()
         getProvider = function() return {} end,
         openDocument = function() return nil end,
     }
+
+    package.loaded["ui/widget/booklist"] = {
+        getBookInfo = function()
+            return { been_opened = false }
+        end,
+        getBookStatus = function()
+            return "new"
+        end,
+        getBookStatusString = function(status)
+            local statuses = {
+                all = "All",
+                new = "New",
+                reading = "Reading",
+                abandoned = "On hold",
+                complete = "Finished",
+            }
+            return statuses[status]
+        end,
+    }
     
     package.loaded["optmath"] = {
         round = function(n) return math.floor(n + 0.5) end
