@@ -175,6 +175,17 @@ describe("TitleBar", function()
             -- Should not crash when calling default callback
             titlebar.left1_button.callback()
         end)
+
+        it("consumes taps when a button callback is explicitly disabled", function()
+            local titlebar = TitleBar:new{
+                icon_size = 32,
+                right2_icon = "go_up.svg",
+                right2_icon_tap_callback = false
+            }
+
+            assert.is_function(titlebar.right2_button.callback)
+            assert.is_true(titlebar.right2_button.callback())
+        end)
     end)
 
     describe("Title and Subtitle", function()

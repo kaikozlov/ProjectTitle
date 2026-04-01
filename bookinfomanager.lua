@@ -1307,7 +1307,8 @@ local function findFilesInDir(path, recursive)
                         table.insert(new_dirs, fullpath)
                     end
                 -- Always ignore macOS resource forks, too.
-                elseif attributes.mode == "file" and not util.stringStartsWith(f, "._") and DocumentRegistry:hasProvider(fullpath) then
+                elseif attributes.mode == "file" and not util.stringStartsWith(f, "._") and DocumentRegistry:hasProvider(fullpath)
+                    and (G_reader_settings:isTrue("show_hidden") or not util.stringStartsWith(f, ".")) then
                     table.insert(files, fullpath)
                 end
             end

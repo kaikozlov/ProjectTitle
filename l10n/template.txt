@@ -82,6 +82,9 @@ msgstr ""
 msgid "Always show maximum length progress bars"
 msgstr ""
 
+msgid "Hide progress bars"
+msgstr ""
+
 msgid "Show calibre tags/keywords"
 msgstr ""
 

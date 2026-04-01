@@ -688,7 +688,11 @@ function ProjectTitle:addToMainMenu(menu_items)
                         end,
                         callback = function()
                             BookInfoManager:toggleSetting("folder_up_requires_hold")
-                            fc:setupLayout()
+                            if self.ui and self.ui.setupLayout then
+                                self.ui:setupLayout()
+                                fc.custom_title_bar = self.ui.title_bar
+                                fc.title_bar = self.ui.title_bar
+                            end
                             fc:updateItems(1, true)
                         end,
                     },
@@ -773,6 +777,19 @@ function ProjectTitle:addToMainMenu(menu_items)
                         checked_func = function() return BookInfoManager:getSetting("force_max_progressbars") end,
                         callback = function()
                             BookInfoManager:toggleSetting("force_max_progressbars")
+                            fc:updateItems(1, true)
+                        end,
+                    },
+                    {
+                        text = _("Hide progress bars"),
+                        enabled_func = function()
+                            return BookInfoManager:getSetting("hide_file_info")
+                        end,
+                        checked_func = function()
+                            return BookInfoManager:getSetting("force_no_progressbars")
+                        end,
+                        callback = function()
+                            BookInfoManager:toggleSetting("force_no_progressbars")
                             fc:updateItems(1, true)
                         end,
                     },

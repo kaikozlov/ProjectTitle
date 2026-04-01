@@ -194,4 +194,59 @@ describe("Main Settings", function()
         package.loaded["ui/widget/doublespinwidget"] = old_standard_loaded
         package.loaded["/ui/widget/doublespinwidget"] = old_absolute_loaded
     end)
+
+    it("rebuilds the title bar when toggling hold-only up-folder", function()
+        local updated = false
+        local setup_called = false
+        local new_title_bar = { marker = "new-title-bar" }
+
+        CoverBrowser.ui = {
+            title_bar = { marker = "old-title-bar" },
+            setupLayout = function(self)
+                setup_called = true
+                self.title_bar = new_title_bar
+            end,
+            file_chooser = {
+                nb_cols_portrait = 3,
+                nb_rows_portrait = 4,
+                nb_cols_landscape = 4,
+                nb_rows_landscape = 3,
+                files_per_page = 10,
+                updateItems = function(_, page, force_refresh)
+                    updated = page == 1 and force_refresh == true
+                end,
+            }
+        }
+        CoverBrowser.modes = { { "Mode 1", "mode1" } }
+
+        local menu_items = {}
+        CoverBrowser:addToMainMenu(menu_items)
+
+        local folder_toggle
+        for _, item in ipairs(menu_items.filemanager_display_mode.sub_item_table) do
+            if item.text == "Advanced settings" then
+                for _, sub_item in ipairs(item.sub_item_table) do
+                    if sub_item.text == "Folder display" then
+                        for _, folder_item in ipairs(sub_item.sub_item_table) do
+                            if folder_item.text == "Require hold for up-folder button" then
+                                folder_toggle = folder_item
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        assert.is_not_nil(folder_toggle)
+        assert.is_nil(BookInfoManager:getSetting("folder_up_requires_hold"))
+
+        folder_toggle.callback()
+
+        assert.equal("Y", BookInfoManager:getSetting("folder_up_requires_hold"))
+        assert.is_true(setup_called)
+        assert.equal(new_title_bar, CoverBrowser.ui.file_chooser.custom_title_bar)
+        assert.equal(new_title_bar, CoverBrowser.ui.file_chooser.title_bar)
+        assert.is_true(updated)
+    end)
 end)

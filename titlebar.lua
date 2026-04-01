@@ -12,6 +12,17 @@ local ptdbg = require("ptdbg")
 
 local DGENERIC_ICON_SIZE = G_defaults:readSetting("DGENERIC_ICON_SIZE")
 
+local function consumeGesture()
+    return true
+end
+
+local function normalizeButtonCallback(callback)
+    if callback == false then
+        return consumeGesture
+    end
+    return callback
+end
+
 local TitleBar = OverlapGroup:extend {
     left1_icon = nil,
     left1_icon_tap_callback = function() end,
@@ -93,8 +104,8 @@ function TitleBar:init()
         padding = 0,
         padding_bottom = self.icon_padding_bottom,
         padding_top = self.icon_padding_top,
-        callback = self.left1_icon_tap_callback,
-        hold_callback = self.left1_icon_hold_callback,
+        callback = normalizeButtonCallback(self.left1_icon_tap_callback),
+        hold_callback = normalizeButtonCallback(self.left1_icon_hold_callback),
         show_parent = self.show_parent,
     }
     self.left1_button_container = build_container(self.left1_button, true, padding1)
@@ -106,8 +117,8 @@ function TitleBar:init()
         padding = 0,
         padding_bottom = self.icon_padding_bottom,
         padding_top = self.icon_padding_top,
-        callback = self.left2_icon_tap_callback,
-        hold_callback = self.left2_icon_hold_callback,
+        callback = normalizeButtonCallback(self.left2_icon_tap_callback),
+        hold_callback = normalizeButtonCallback(self.left2_icon_hold_callback),
         show_parent = self.show_parent,
     }
     self.left2_button_container = build_container(self.left2_button, true, padding2)
@@ -119,8 +130,8 @@ function TitleBar:init()
         padding = 0,
         padding_bottom = self.icon_padding_bottom,
         padding_top = self.icon_padding_top,
-        callback = self.left3_icon_tap_callback,
-        hold_callback = self.left3_icon_hold_callback,
+        callback = normalizeButtonCallback(self.left3_icon_tap_callback),
+        hold_callback = normalizeButtonCallback(self.left3_icon_hold_callback),
         show_parent = self.show_parent,
     }
     self.left3_button_container = build_container(self.left3_button, true, padding3)
@@ -133,8 +144,8 @@ function TitleBar:init()
         padding_bottom = 0,
         padding_top = 0,
         overlap_align = "center", -- this does all the work of centering itself, no container needed
-        callback = self.center_icon_tap_callback,
-        hold_callback = self.center_icon_hold_callback,
+        callback = normalizeButtonCallback(self.center_icon_tap_callback),
+        hold_callback = normalizeButtonCallback(self.center_icon_hold_callback),
         show_parent = self.show_parent,
     }
     self.center_button_container = self.center_button
@@ -146,8 +157,8 @@ function TitleBar:init()
         padding = 0,
         padding_bottom = self.icon_padding_bottom,
         padding_top = self.icon_padding_top,
-        callback = self.right3_icon_tap_callback,
-        hold_callback = self.right3_icon_hold_callback,
+        callback = normalizeButtonCallback(self.right3_icon_tap_callback),
+        hold_callback = normalizeButtonCallback(self.right3_icon_hold_callback),
         show_parent = self.show_parent,
     }
     self.right3_button_container = build_container(self.right3_button, false, padding3)
@@ -159,8 +170,8 @@ function TitleBar:init()
         padding = 0,
         padding_bottom = self.icon_padding_bottom,
         padding_top = self.icon_padding_top,
-        callback = self.right2_icon_tap_callback,
-        hold_callback = self.right2_icon_hold_callback,
+        callback = normalizeButtonCallback(self.right2_icon_tap_callback),
+        hold_callback = normalizeButtonCallback(self.right2_icon_hold_callback),
         show_parent = self.show_parent,
     }
     self.right2_button_container = build_container(self.right2_button, false, padding2)
@@ -172,8 +183,8 @@ function TitleBar:init()
         padding = 0,
         padding_bottom = self.icon_padding_bottom,
         padding_top = self.icon_padding_top,
-        callback = self.right1_icon_tap_callback,
-        hold_callback = self.right1_icon_hold_callback,
+        callback = normalizeButtonCallback(self.right1_icon_tap_callback),
+        hold_callback = normalizeButtonCallback(self.right1_icon_hold_callback),
         show_parent = self.show_parent,
     }
     self.right1_button_container = build_container(self.right1_button, false, padding1)
