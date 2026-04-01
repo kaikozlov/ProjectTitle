@@ -201,19 +201,7 @@ function ProjectTitle:onDispatcherRegisterActions()
     })
 end
 
-function ProjectTitle:init()
-    if not self.ui.document then -- FileManager menu only
-        self.ui.menu:registerToMainMenu(self)
-    end
-
-    if init_done then -- things already patched according to current modes
-        return
-    end
-
-    -- impersonate coverbrowser to support calls from KOReader core
-    self.coverbrowser = self
-    self.ui.coverbrowser = self
-
+local function runSettingsMigrations()
     -- on first ever run and occasionally afterward it will be necessary to create
     -- new settings keys in the 'config' table and some of them require restarting
     -- koreader to fully apply.
@@ -228,7 +216,7 @@ function ProjectTitle:init()
             BookInfoManager:saveSetting("history_display_mode", "list_image_meta")
             BookInfoManager:saveSetting("collection_display_mode", "list_image_meta")
         end
-        -- initalize settings with their defaults
+        -- initialize settings with their defaults
         BookInfoManager:saveSetting("config_version", "1")
         BookInfoManager:saveSetting("series_mode", "series_in_separate_line")
         BookInfoManager:saveSetting("hide_file_info", true)
@@ -240,7 +228,7 @@ function ProjectTitle:init()
         restart_needed = true
     end
 
-    -- initalize additional settings with their defaults
+    -- initialize additional settings with their defaults
     if BookInfoManager:getSetting("config_version") == nil then
         -- catch installs done before setting versioning
         logger.info(ptdbg.logprefix, "Migrating settings to version 1")
@@ -324,6 +312,24 @@ function ProjectTitle:init()
         BookInfoManager:saveSetting("footer_show_frontlight_warmth", true)
         BookInfoManager:saveSetting("config_version", "11")
     end
+
+    return restart_needed
+end
+
+function ProjectTitle:init()
+    if not self.ui.document then -- FileManager menu only
+        self.ui.menu:registerToMainMenu(self)
+    end
+
+    if init_done then -- things already patched according to current modes
+        return
+    end
+
+    -- impersonate coverbrowser to support calls from KOReader core
+    self.coverbrowser = self
+    self.ui.coverbrowser = self
+
+    local restart_needed = runSettingsMigrations()
 
     -- restart if needed
     if restart_needed then
@@ -432,6 +438,8 @@ function ProjectTitle:deletePluginSettings()
         end
     end
 end
+
+ProjectTitle._runSettingsMigrations = runSettingsMigrations
 
 function ProjectTitle:addToMainMenu(menu_items)
     local sub_item_table, history_sub_item_table, collection_sub_item_table = {}, {}, {}

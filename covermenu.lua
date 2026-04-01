@@ -140,7 +140,7 @@ function CoverMenu.configureDisplayMenu(menu, display_mode, opts)
         local MosaicMenu = require("mosaicmenu")
         menu._recalculateDimen = MosaicMenu._recalculateDimen
         menu._updateItemsBuildUI = MosaicMenu._updateItemsBuildUI
-        menu._do_cover_images = display_mode ~= "mosaic_text"
+        menu._do_cover_images = true
         menu._do_hint_opened = do_hint_opened ~= nil and do_hint_opened or true
         menu._do_center_partial_rows = false
         menu._do_filename_only = nil

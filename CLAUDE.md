@@ -22,12 +22,17 @@ The plugin follows a strict initialization sequence:
    - Accepts exact matches, newer KOReader builds, and slightly older builds within the current compatibility window
    - Can bypass the version gate with `pt-skipversioncheck.txt` file
 
-2. **Settings migration** (main.lua:208-280):
-   - Uses versioned config migrations (`config_version` 1-7)
-   - Current version 7 (as of latest update)
+2. **Settings migration** (main.lua:231-343):
+   - Uses versioned config migrations (`config_version` 1-12)
+   - Current version 12 (as of latest update)
    - Version history:
      - v6: Introduced `progress_text_format` (replaced `show_pages_read_as_progress`)
      - v7: Introduced `show_mosaic_titles`
+     - v8: Introduced `author_series_order`
+     - v9: Introduced `folder_up_requires_hold`
+     - v10: Introduced `footer_page_controls_alignment`
+     - v11: Introduced footer device-info toggles
+     - v12: Introduced `library_status_filter`
    - Migrates settings as new features are added
    - May trigger a KOReader restart if needed
 
@@ -198,7 +203,7 @@ Tests use mocked KOReader widgets since the plugin depends on KOReader's UI fram
 - Plugin settings stored in BookInfoManager database `config` table
 - KOReader global settings accessed via G_reader_settings
 - Setting keys use descriptive names (e.g., `hide_file_info`, `show_progress_in_mosaic`)
-- Settings are versioned with `config_version` (currently 7) to support automatic migration
+- Settings are versioned with `config_version` (currently 12) to support automatic migration
 
 ### Performance Considerations
 - Cover image extraction can be slow, especially with many files
