@@ -46,7 +46,7 @@ end
 
 --[[
     The settings and functions in this file are to intended make user patches easier.
-    I strongly recommend writing a user patch rather than editing this file directly.
+    A user patch is the best way to customize this plugin — edits here will be lost when upgrading.
     Changes made to this file will be lost when upgrading. User patches are forever.
 
     For more information and examples visit this wiki article:

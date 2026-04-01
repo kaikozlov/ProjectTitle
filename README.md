@@ -10,7 +10,7 @@ Project: Title is a plugin made by two people who love KOreader but wanted to ex
 ## Features
 * **A Speedy Title Bar**: Thinner with more functionality, adding Favorites, History, Open Last Book, and Up Folder buttons to help you get exactly where you need as fast as possible.
 
-* **A Fresh Book Listing**: New fonts, new text, new icons for books without covers and unsupported files. An optional variable-length progress bar that shows the relative size of each book. Books are presented in a tasteful, distinct manner that adjusts to the screen size and how many items are on screen.
+* **A Fresh Book Listing**: New fonts, new text, new icons for books without covers and unsupported files. An optional variable-length progress bar that shows the relative size of each book. Book listings adapt to the screen size and number of items on screen.
 
 * **A Fitting Folder**: Folders no longer show slashes in their names, and instead are shown your choice of cover image, thumbnails, or a generic icon. The arrow to move up a folder has been moved up into the title bar, to give more space for your books.
 
@@ -20,12 +20,19 @@ Project: Title is a plugin made by two people who love KOreader but wanted to ex
 
 * **A Few Nice Extras**: Autoscan for new books on USB eject, make list and grid items larger or smaller with gestures (pinch/spread), a trophy icon to mark finished books, displaying the tags/keywords for books in list mode, and custom sort methods (author last name, book size/page count).
 
+* **Additional Customization**: For advanced use cases, KOReader's "user patches" system allows modifying the plugin further. Community patches are available, or you can write your own with a little Lua.
 
-## Who this (hopefully) is for:
-* Kobo device owners, jailbroken Kindle owners, Android reader owners, as well as owners of Pocketbook, Boox, Bigme and more.
-* People with tidy EPUB/PDF libraries. We make sure every EPUB we sync has a title, author, series and cover image, so we designed around books always having that metadata. (We recommend Calibre for this.)
-* Readers who like browsing for their next book and being able to see how long a book is before starting it.
 
+## Supported devices
+* Kobo — designed and tested on Aura One and Sage.
+* Jailbroken Kindle — supported since version 2025.04v1.
+* Android — supported since version 2025.04v2.
+* PocketBook, Boox, Bigme and others should work as well.
+
+## Things to know
+* The plugin works best with EPUBs and PDFs that have metadata (title, author, series) and cover images. We recommend using [Calibre](https://calibre-ebook.com/) to manage this.
+* A "filenames only" display mode is included if you prefer a plain list but still want the other features.
+* Display modes with many visual elements (like a 4x4 grid with folder thumbnails on older devices) may be slower than a plain list. Performance varies by device and settings.
 
 ## Who this (probably) is not for:
 * KOReader users who prefer a barebones UI. If you are happy picking your next read from a list of filenames then KOReader already does this extremely well!
@@ -49,6 +56,10 @@ We made this plugin to be what we want it to be so we can't implement everyone's
 ## Instructions and Other Documentation
 **Documentation:**
 [Documentation Wiki Page](../../wiki/Documentation)
+
+**Advanced customization (user patches):**
+
+[User Patch Wiki Page](../../wiki/User-Patches-for-Project-Title)
 
 **To configure Calibre to add page counts to books:**
 [Calibre Page Counts Wiki Page](../../wiki/Configure-Calibre-Page-Counts)
