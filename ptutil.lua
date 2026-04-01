@@ -1976,6 +1976,9 @@ function ptutil.formatFooterText(footer_config, _manager, path, fm_default_dir, 
                 end
             end,
             wifi = function()
+                if not Device:hasFastWifiStatusQuery() then
+                    return nil
+                end
                 local NetworkMgr = require("ui/network/manager")
                 return NetworkMgr:isWifiOn() and "" or (config.wifi_show_disabled and "")
             end,

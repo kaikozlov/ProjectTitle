@@ -374,6 +374,31 @@ describe("ptutil Formatting Functions", function()
 
             assert.equal("10:30" .. ptutil.separator.dot .. "B50%", result)
         end)
+
+        it("does not query wifi status on devices without fast wifi status support", function()
+            local wifi_calls = 0
+
+            BookInfoManager:saveSetting("config_version", "11")
+            BookInfoManager:saveSetting("replace_footer_text", true)
+            BookInfoManager:saveSetting("footer_show_clock", false)
+            BookInfoManager:saveSetting("footer_show_wifi", true)
+            BookInfoManager:saveSetting("footer_show_battery", false)
+            BookInfoManager:saveSetting("footer_show_frontlight", false)
+            BookInfoManager:saveSetting("footer_show_frontlight_warmth", false)
+
+            package.loaded["ui/network/manager"] = {
+                isWifiOn = function()
+                    wifi_calls = wifi_calls + 1
+                    return true
+                end,
+            }
+            Device.hasFastWifiStatusQuery = function() return false end
+
+            local result = ptutil.formatFooterText(nil, nil, "/mnt/us", "/mnt/us", false, false)
+
+            assert.is_nil(result)
+            assert.equal(0, wifi_calls)
+        end)
     end)
 
     describe("getFontFace", function()

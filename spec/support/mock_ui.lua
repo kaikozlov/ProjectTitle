@@ -284,6 +284,7 @@ local function setup_mocks()
         hasAuxBattery = function() return false end,
         hasFrontlight = function() return false end,
         hasNaturalLight = function() return false end,
+        hasFastWifiStatusQuery = function() return true end,
         isCervantes = function() return false end,
         isKobo = function() return false end,
         getPowerDevice = function()

@@ -859,6 +859,22 @@ describe("CoverMenu", function()
 
             assert.equal(1, cleared)
         end)
+
+        it("calls the widget-specific original close handler when present", function()
+            local original_close_calls = 0
+            local menu = {
+                item_group = { free = function() end },
+                _covermenu_onclose_done = false,
+                _pt_onCloseWidget_orig = function()
+                    original_close_calls = original_close_calls + 1
+                end,
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:onCloseWidget()
+
+            assert.equal(1, original_close_calls)
+        end)
     end)
 
     describe("scheduled refresh batching", function()
@@ -1169,6 +1185,224 @@ describe("CoverMenu", function()
 
             assert.equal("Warmth 10%", menu.file_chooser.cur_folder_text.text)
             assert.equal(1, dirty_calls)
+        end)
+
+        it("does not repaint the footer when the topmost widget covers the screen", function()
+            local dirty_calls = 0
+            local footer_text = "Warmth 25%"
+            local UIManager = package.loaded["ui/uimanager"]
+            local ptutil = package.loaded["ptutil"]
+            local filemanagerutil = package.loaded["apps/filemanager/filemanagerutil"]
+            local filemanagershortcuts = package.loaded["apps/filemanager/filemanagershortcuts"]
+            local original_schedule_in = UIManager.scheduleIn
+            local original_set_dirty = UIManager.setDirty
+            local original_get_topmost = UIManager.getTopmostVisibleWidget
+            local original_format_footer_text = ptutil.formatFooterText
+            local original_get_setting = BookInfoManager.getSetting
+            local original_get_default_dir = filemanagerutil.getDefaultDir
+            local original_has_folder_shortcut = filemanagershortcuts.hasFolderShortcut
+
+            UIManager.scheduleIn = function() end
+            UIManager.setDirty = function()
+                dirty_calls = dirty_calls + 1
+            end
+            UIManager.getTopmostVisibleWidget = function()
+                return { covers_fullscreen = true }
+            end
+            ptutil.formatFooterText = function()
+                return footer_text
+            end
+            filemanagerutil.getDefaultDir = function()
+                return "/default"
+            end
+            filemanagershortcuts.hasFolderShortcut = function()
+                return false
+            end
+            BookInfoManager.getSetting = function(_, key)
+                if key == "replace_footer_text" then
+                    return true
+                end
+                return original_get_setting(BookInfoManager, key)
+            end
+
+            local menu = {
+                show_parent = { name = "FileManager" },
+                root_path = "/books",
+                onHome = function() end,
+                registerKeyEvents = function() end,
+                _pt_filechooser_display_mode = "list_image_meta",
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+            menu.file_chooser.path = "/books"
+            menu.file_chooser.cur_folder_text.text = "Warmth 0%"
+            dirty_calls = 0
+
+            menu.file_chooser:onFrontlightStateChanged()
+
+            UIManager.scheduleIn = original_schedule_in
+            UIManager.setDirty = original_set_dirty
+            UIManager.getTopmostVisibleWidget = original_get_topmost
+            ptutil.formatFooterText = original_format_footer_text
+            BookInfoManager.getSetting = original_get_setting
+            filemanagerutil.getDefaultDir = original_get_default_dir
+            filemanagershortcuts.hasFolderShortcut = original_has_folder_shortcut
+
+            assert.equal("Warmth 25%", menu.file_chooser.cur_folder_text.text)
+            assert.equal(0, dirty_calls)
+        end)
+
+        it("requests a full repaint when another visible widget may overlap the footer", function()
+            local dirty_widget
+            local dirty_payload
+            local footer_text = "Warmth 30%"
+            local UIManager = package.loaded["ui/uimanager"]
+            local ptutil = package.loaded["ptutil"]
+            local filemanagerutil = package.loaded["apps/filemanager/filemanagerutil"]
+            local filemanagershortcuts = package.loaded["apps/filemanager/filemanagershortcuts"]
+            local original_schedule_in = UIManager.scheduleIn
+            local original_set_dirty = UIManager.setDirty
+            local original_get_topmost = UIManager.getTopmostVisibleWidget
+            local original_format_footer_text = ptutil.formatFooterText
+            local original_get_setting = BookInfoManager.getSetting
+            local original_get_default_dir = filemanagerutil.getDefaultDir
+            local original_has_folder_shortcut = filemanagershortcuts.hasFolderShortcut
+
+            UIManager.scheduleIn = function() end
+            UIManager.setDirty = function(_, widget, payload)
+                dirty_widget = widget
+                dirty_payload = payload
+            end
+            UIManager.getTopmostVisibleWidget = function()
+                return { name = "Dialog" }
+            end
+            ptutil.formatFooterText = function()
+                return footer_text
+            end
+            filemanagerutil.getDefaultDir = function()
+                return "/default"
+            end
+            filemanagershortcuts.hasFolderShortcut = function()
+                return false
+            end
+            BookInfoManager.getSetting = function(_, key)
+                if key == "replace_footer_text" then
+                    return true
+                end
+                return original_get_setting(BookInfoManager, key)
+            end
+
+            local menu = {
+                show_parent = { name = "FileManager" },
+                root_path = "/books",
+                onHome = function() end,
+                registerKeyEvents = function() end,
+                _pt_filechooser_display_mode = "list_image_meta",
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+            menu.file_chooser.path = "/books"
+            menu.file_chooser.cur_folder_text.text = "Warmth 0%"
+            dirty_widget = nil
+            dirty_payload = nil
+
+            menu.file_chooser:onFrontlightStateChanged()
+
+            UIManager.scheduleIn = original_schedule_in
+            UIManager.setDirty = original_set_dirty
+            UIManager.getTopmostVisibleWidget = original_get_topmost
+            ptutil.formatFooterText = original_format_footer_text
+            BookInfoManager.getSetting = original_get_setting
+            filemanagerutil.getDefaultDir = original_get_default_dir
+            filemanagershortcuts.hasFolderShortcut = original_has_folder_shortcut
+
+            assert.equal("Warmth 30%", menu.file_chooser.cur_folder_text.text)
+            assert.is_nil(dirty_widget)
+            assert.equal("ui", dirty_payload)
+        end)
+
+        it("unschedules footer refreshes on suspend", function()
+            local unscheduled_action
+            local UIManager = package.loaded["ui/uimanager"]
+            local original_unschedule = UIManager.unschedule
+
+            UIManager.unschedule = function(_, action)
+                unscheduled_action = action
+            end
+
+            local menu = {
+                footer_refresh_action = "footer-refresh",
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:onSuspend()
+
+            UIManager.unschedule = original_unschedule
+
+            assert.equal("footer-refresh", unscheduled_action)
+            assert.is_nil(menu.footer_refresh_action)
+        end)
+
+        it("defers resume footer refresh until out of screensaver when delayed screensaver is enabled", function()
+            local refresh_calls = 0
+            local schedule_calls = 0
+            local original_read_setting = G_reader_settings.readSetting
+
+            G_reader_settings.readSetting = function(_, key)
+                if key == "screensaver_delay" then
+                    return "3"
+                end
+                return original_read_setting(G_reader_settings, key)
+            end
+
+            local menu = {}
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+            menu.refreshFooterText = function()
+                refresh_calls = refresh_calls + 1
+            end
+            menu.scheduleFooterRefresh = function()
+                schedule_calls = schedule_calls + 1
+            end
+
+            menu:onResume()
+            menu:onOutOfScreenSaver()
+
+            G_reader_settings.readSetting = original_read_setting
+
+            assert.equal(1, refresh_calls)
+            assert.equal(1, schedule_calls)
+            assert.is_nil(menu._pt_footer_resume_delayed)
+        end)
+
+        it("refreshes the footer immediately on resume when no delayed screensaver is configured", function()
+            local refresh_calls = 0
+            local schedule_calls = 0
+            local original_read_setting = G_reader_settings.readSetting
+
+            G_reader_settings.readSetting = function(_, key)
+                if key == "screensaver_delay" then
+                    return "disable"
+                end
+                return original_read_setting(G_reader_settings, key)
+            end
+
+            local menu = {}
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+            menu.refreshFooterText = function()
+                refresh_calls = refresh_calls + 1
+            end
+            menu.scheduleFooterRefresh = function()
+                schedule_calls = schedule_calls + 1
+            end
+
+            menu:onResume()
+
+            G_reader_settings.readSetting = original_read_setting
+
+            assert.equal(1, refresh_calls)
+            assert.equal(1, schedule_calls)
         end)
     end)
 

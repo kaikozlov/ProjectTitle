@@ -80,6 +80,21 @@ local function shouldRefreshFooterLive(menu)
         and menu.path ~= ""
 end
 
+local function getFooterRepaintMode(menu)
+    if not UIManager.getTopmostVisibleWidget then
+        return true, false
+    end
+
+    local top_wg = UIManager:getTopmostVisibleWidget()
+    if not top_wg or top_wg == menu or top_wg == menu.show_parent then
+        return true, false
+    end
+    if top_wg.covers_fullscreen or top_wg.covers_footer then
+        return false, false
+    end
+    return true, true
+end
+
 local function onFolderUp(menu)
     if menu and menu._pt_current_path then -- file browser or PathChooser
         local current_path = menu._pt_current_path
@@ -107,6 +122,10 @@ function CoverMenu.configureDisplayMenu(menu, display_mode, opts)
     local do_hint_opened = opts.do_hint_opened
     local prepare_menu = opts.prepare_menu
 
+    if menu.onCloseWidget and menu.onCloseWidget ~= CoverMenu.onCloseWidget then
+        menu._pt_onCloseWidget_orig = menu.onCloseWidget
+    end
+
     menu.display_mode_type = display_mode and display_mode:gsub("_.*", "") or nil
 
     if not display_mode then
@@ -122,6 +141,17 @@ function CoverMenu.configureDisplayMenu(menu, display_mode, opts)
         menu._do_filename_only = nil
         menu._do_hint_opened = nil
         menu._do_center_partial_rows = nil
+        menu.refreshFooterText = nil
+        menu.scheduleFooterRefresh = nil
+        menu.unscheduleFooterRefresh = nil
+        menu.onFrontlightStateChanged = nil
+        menu.onCharging = nil
+        menu.onNotCharging = nil
+        menu.onNetworkConnected = nil
+        menu.onNetworkDisconnected = nil
+        menu.onSuspend = nil
+        menu.onResume = nil
+        menu.onOutOfScreenSaver = nil
         return
     end
 
@@ -135,6 +165,17 @@ function CoverMenu.configureDisplayMenu(menu, display_mode, opts)
         menu.genItemTable = CoverMenu.genItemTable
     end
     menu.updatePageInfo = CoverMenu.updatePageInfo
+    menu.refreshFooterText = CoverMenu.refreshFooterText
+    menu.scheduleFooterRefresh = CoverMenu.scheduleFooterRefresh
+    menu.unscheduleFooterRefresh = CoverMenu.unscheduleFooterRefresh
+    menu.onFrontlightStateChanged = CoverMenu.onFrontlightStateChanged
+    menu.onCharging = CoverMenu.onCharging
+    menu.onNotCharging = CoverMenu.onNotCharging
+    menu.onNetworkConnected = CoverMenu.onNetworkConnected
+    menu.onNetworkDisconnected = CoverMenu.onNetworkDisconnected
+    menu.onSuspend = CoverMenu.onSuspend
+    menu.onResume = CoverMenu.onResume
+    menu.onOutOfScreenSaver = CoverMenu.onOutOfScreenSaver
 
     if menu.display_mode_type == "mosaic" then
         local MosaicMenu = require("mosaicmenu")
@@ -412,8 +453,10 @@ function CoverMenu:onCloseWidget()
     end)
     nb_drawings_since_last_collectgarbage = 0
 
-    -- Call the object's original onCloseWidget (i.e., Menu's, as none our our expected subclasses currently implement it)
-    Menu.onCloseWidget(self)
+    local original_on_close = self._pt_onCloseWidget_orig or Menu.onCloseWidget
+    if original_on_close then
+        original_on_close(self)
+    end
 end
 
 function CoverMenu:genItemTable(dirs, files, path)
@@ -746,10 +789,7 @@ function CoverMenu.prepareMenuInit(self)
 end
 
 function CoverMenu:scheduleFooterRefresh()
-    if self.footer_refresh_action then
-        UIManager:unschedule(self.footer_refresh_action)
-        self.footer_refresh_action = nil
-    end
+    self:unscheduleFooterRefresh()
     if not shouldRefreshFooterLive(self) then
         return
     end
@@ -766,6 +806,13 @@ function CoverMenu:scheduleFooterRefresh()
     UIManager:scheduleIn(delay, self.footer_refresh_action)
 end
 
+function CoverMenu:unscheduleFooterRefresh()
+    if self.footer_refresh_action then
+        UIManager:unschedule(self.footer_refresh_action)
+        self.footer_refresh_action = nil
+    end
+end
+
 function CoverMenu:refreshFooterText()
     if not shouldRefreshFooterLive(self) then
         return
@@ -779,6 +826,14 @@ function CoverMenu:refreshFooterText()
     end
 
     self.cur_folder_text:setText(footertxt)
+    local should_repaint, full_repaint = getFooterRepaintMode(self)
+    if not should_repaint then
+        return
+    end
+    if full_repaint then
+        UIManager:setDirty(nil, "ui")
+        return
+    end
     UIManager:setDirty(self.show_parent, function()
         return "ui", self._pt_footer_refresh_dimen or self.dimen
     end)
@@ -793,14 +848,42 @@ CoverMenu.onNotCharging = CoverMenu.onFrontlightStateChanged
 CoverMenu.onNetworkConnected = CoverMenu.onFrontlightStateChanged
 CoverMenu.onNetworkDisconnected = CoverMenu.onFrontlightStateChanged
 
+function CoverMenu:onSuspend()
+    self:unscheduleFooterRefresh()
+end
+
+function CoverMenu:onResume()
+    local screensaver_delay = G_reader_settings:readSetting("screensaver_delay")
+    if screensaver_delay and screensaver_delay ~= "disable" then
+        self._pt_footer_resume_delayed = true
+        return
+    end
+    self._pt_footer_resume_delayed = nil
+    self:refreshFooterText()
+    self:scheduleFooterRefresh()
+end
+
+function CoverMenu:onOutOfScreenSaver()
+    if not self._pt_footer_resume_delayed then
+        return
+    end
+    self._pt_footer_resume_delayed = nil
+    self:refreshFooterText()
+    self:scheduleFooterRefresh()
+end
+
 function CoverMenu.finishMenuInit(self)
     self.scheduleFooterRefresh = CoverMenu.scheduleFooterRefresh
+    self.unscheduleFooterRefresh = CoverMenu.unscheduleFooterRefresh
     self.refreshFooterText = CoverMenu.refreshFooterText
     self.onFrontlightStateChanged = CoverMenu.onFrontlightStateChanged
     self.onCharging = CoverMenu.onCharging
     self.onNotCharging = CoverMenu.onNotCharging
     self.onNetworkConnected = CoverMenu.onNetworkConnected
     self.onNetworkDisconnected = CoverMenu.onNetworkDisconnected
+    self.onSuspend = CoverMenu.onSuspend
+    self.onResume = CoverMenu.onResume
+    self.onOutOfScreenSaver = CoverMenu.onOutOfScreenSaver
     -- pagination controls
     self.page_info = HorizontalGroup:new {
         self.page_info_first_chev,
