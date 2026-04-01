@@ -144,6 +144,7 @@ function TitleBar:init()
         padding_bottom = 0,
         padding_top = 0,
         overlap_align = "center", -- this does all the work of centering itself, no container needed
+        allow_flash = false,
         callback = normalizeButtonCallback(self.center_icon_tap_callback),
         hold_callback = normalizeButtonCallback(self.center_icon_hold_callback),
         show_parent = self.show_parent,
