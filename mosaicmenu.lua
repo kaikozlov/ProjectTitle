@@ -192,22 +192,10 @@ function FakeCover:init()
         series = self.authors_add
     end
 
-    -- We build the VerticalGroup widget with decreasing font sizes till
-    -- the widget fits into available height
-    -- Use ptutil.estimateFontSize() to get a good starting point and reduce iterations
-    local combined_text = (authors or "") .. (title or "") .. (series or "")
-    local available_height_for_text = height * 0.8 -- Reserve 20% for padding
-    local estimated_font = ptutil.estimateFontSize({
-        text = combined_text,
-        width = text_width,
-        height = available_height_for_text,
-        min_size = math.min(self.authors_font_min, self.title_font_min),
-        max_size = self.title_font_max,
-    })
-    -- Convert estimated font size to sizedec (how much to subtract from max)
-    -- Start from a sizedec that gives us the estimated font, but not less than initial_sizedec
-    local estimated_sizedec = math.max(0, self.title_font_max - estimated_font)
-    local sizedec = math.max(self.initial_sizedec, math.floor(estimated_sizedec / self.sizedec_step) * self.sizedec_step)
+    -- Start at the largest configured size and only decrease after measuring
+    -- real KOReader widgets. A heuristic underestimate would permanently make
+    -- a cover smaller because this loop never searches upward.
+    local sizedec = self.initial_sizedec
     local loop2 = false -- we may do a second pass with modifier title and authors strings
     local texts_height
     local free_height
@@ -527,21 +515,16 @@ function MosaicMenuItem:update()
                 forced_baseline = baseline,
             }
         end
-        -- Use estimateFontSize() to get a better starting point
-        local estimated_font = ptutil.estimateFontSize({
-            text = directory_string,
-            width = dimen.w,
-            height = dimen.h * 0.3, -- Directory text only uses small portion
-            min_size = ptutil.grid_defaults.dir_font_min,
-            max_size = ptutil.grid_defaults.dir_font_nominal,
-        })
-        local dirtext_font_size = math.max(estimated_font, ptutil.grid_defaults.dir_font_min)
+        -- Measure from the nominal size downward so the selected size is the
+        -- largest one that actually fits this font and string.
+        local dirtext_font_size = ptutil.grid_defaults.dir_font_nominal
         build_directory_text(dirtext_font_size)
         local directory_text_height = directory_text:getSize().h
         local directory_text_baseline = directory_text:getBaseline()
         while dirtext_font_size > ptutil.grid_defaults.dir_font_min do
             if directory_text:isTruncated() then
-                dirtext_font_size = math.min(dirtext_font_size - ptutil.grid_defaults.fontsize_dec_step, ptutil.grid_defaults.dir_font_min)
+                dirtext_font_size = math.max(dirtext_font_size - ptutil.grid_defaults.fontsize_dec_step, ptutil.grid_defaults.dir_font_min)
+                directory_text:free()
                 build_directory_text(dirtext_font_size, directory_text_height, directory_text_baseline)
             else
                 break
@@ -773,6 +756,7 @@ function MosaicMenuItem:update()
                     
                     -- If still too tall, drop the authors line and try again
                     if info_block_height + info_gap > max_reserved and authors_text then
+                        info_container:free()
                         info_vgroup = VerticalGroup:new {}
                         if title_text then
                             local title_face = ptutil.getFontFace(ptutil.good_serif, title_font_size)
@@ -801,6 +785,7 @@ function MosaicMenuItem:update()
                     
                     -- Final check - if still too tall, drop it entirely
                     if info_block_height + info_gap > max_reserved then
+                        info_container:free()
                         info_container = nil
                         info_block_height = 0
                         info_gap = 0
@@ -1485,8 +1470,9 @@ function MosaicMenu:_updateItemsBuildUI()
     for idx = 1, self.perpage do
         local index = idx_offset + idx
         local entry = self.item_table[index]
-        if entry and entry.path and entry.is_file and not entry.is_go_up then
-            table.insert(filepaths, entry.path)
+        local filepath = entry and (entry.file or (entry.is_file and entry.path))
+        if filepath and not entry.is_go_up then
+            table.insert(filepaths, filepath)
         end
     end
     local bookinfo_batch = {}

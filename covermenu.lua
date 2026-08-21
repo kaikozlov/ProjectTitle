@@ -113,6 +113,33 @@ end
 local CoverMenu = {}
 local _FileChooser_init_orig = FileChooser.init
 
+function CoverMenu.updateFolderUpButton(file_chooser)
+    local title_bar = file_chooser and (file_chooser.title_bar or file_chooser.custom_title_bar)
+    if not title_bar then
+        return
+    end
+
+    local callback = function()
+        onFolderUp(file_chooser)
+    end
+    local requires_hold = BookInfoManager:getSetting("folder_up_requires_hold")
+    if requires_hold then
+        title_bar.right2_icon_tap_callback = false
+        title_bar.right2_icon_hold_callback = callback
+        if title_bar.right2_button then
+            title_bar.right2_button.callback = nil
+            title_bar.right2_button.hold_callback = callback
+        end
+    else
+        title_bar.right2_icon_tap_callback = callback
+        title_bar.right2_icon_hold_callback = false
+        if title_bar.right2_button then
+            title_bar.right2_button.callback = callback
+            title_bar.right2_button.hold_callback = nil
+        end
+    end
+end
+
 function CoverMenu.configureDisplayMenu(menu, display_mode, opts)
     if not menu then
         return
@@ -135,6 +162,14 @@ function CoverMenu.configureDisplayMenu(menu, display_mode, opts)
     end
 
     if not display_mode then
+        if menu.items_update_action then
+            UIManager:unschedule(menu.items_update_action)
+            menu.items_update_action = nil
+        end
+        if menu.footer_refresh_action then
+            UIManager:unschedule(menu.footer_refresh_action)
+            menu.footer_refresh_action = nil
+        end
         menu.updateItems = CoverMenu._FileChooser_updateItems_orig
         menu.onCloseWidget = CoverMenu._FileChooser_onCloseWidget_orig
         menu._recalculateDimen = CoverMenu._FileChooser__recalculateDimen_orig
@@ -188,7 +223,10 @@ function CoverMenu.configureDisplayMenu(menu, display_mode, opts)
         menu._recalculateDimen = MosaicMenu._recalculateDimen
         menu._updateItemsBuildUI = MosaicMenu._updateItemsBuildUI
         menu._do_cover_images = true
-        menu._do_hint_opened = do_hint_opened ~= nil and do_hint_opened or true
+        menu._do_hint_opened = do_hint_opened
+        if menu._do_hint_opened == nil then
+            menu._do_hint_opened = true
+        end
         menu._do_center_partial_rows = false
         menu._do_filename_only = nil
     elseif menu.display_mode_type == "list" then
@@ -197,12 +235,18 @@ function CoverMenu.configureDisplayMenu(menu, display_mode, opts)
         menu._updateItemsBuildUI = ListMenu._updateItemsBuildUI
         menu._do_cover_images = display_mode ~= "list_only_meta" and display_mode ~= "list_no_meta"
         menu._do_filename_only = display_mode == "list_no_meta"
-        menu._do_hint_opened = do_hint_opened ~= nil and do_hint_opened or true
+        menu._do_hint_opened = do_hint_opened
+        if menu._do_hint_opened == nil then
+            menu._do_hint_opened = true
+        end
         menu._do_center_partial_rows = nil
     end
 end
 
 function CoverMenu.configureFileChooser(file_chooser, display_mode)
+    if file_chooser then
+        file_chooser._pt_owns_bookinfo_session = display_mode and true or nil
+    end
     CoverMenu.configureDisplayMenu(file_chooser, display_mode, {
         include_gen_item_table = true,
         do_hint_opened = display_mode and true or nil,
@@ -418,11 +462,15 @@ function CoverMenu:onCloseWidget()
     end
     self._covermenu_onclose_done = true
 
-    -- Stop background job if any (so that full cpu is available to reader)
-    logger.dbg(ptdbg.logprefix, "CoverMenu:onCloseWidget: terminating jobs if needed")
-    BookInfoManager:terminateBackgroundJobs()
-    BookInfoManager:closeDbConnection() -- sqlite connection no more needed
-    BookInfoManager:cleanUp()           -- clean temporary resources
+    if self._pt_owns_bookinfo_session then
+        -- The main FileChooser owns the shared extraction/database session.
+        -- History, Collections, Search and PathChooser menus are transient
+        -- clients and must not tear shared state down when they close.
+        logger.dbg(ptdbg.logprefix, "CoverMenu:onCloseWidget: terminating jobs if needed")
+        BookInfoManager:terminateBackgroundJobs()
+        BookInfoManager:closeDbConnection()
+        BookInfoManager:cleanUp()
+    end
     self._pt_pathchooser = nil
     self._pt_current_path = nil
     self._pt_previous_path = nil
@@ -446,17 +494,18 @@ function CoverMenu:onCloseWidget()
         self.widget_pool:clear()
     end
 
-    -- Clear folder cover widget cache
-    ptutil.clearFolderCoverCache()
-    ptutil.clearFontSizeCache()
+    if self._pt_owns_bookinfo_session then
+        ptutil.clearFolderCoverCache()
+        ptutil.clearFontSizeCache()
 
-    -- Force garbage collecting when leaving too
-    -- (delay it a bit so this pause is less noticable)
-    UIManager:scheduleIn(0.2, function()
-        collectgarbage()
-        collectgarbage()
-    end)
-    nb_drawings_since_last_collectgarbage = 0
+        -- Force garbage collecting when leaving too
+        -- (delay it a bit so this pause is less noticable)
+        UIManager:scheduleIn(0.2, function()
+            collectgarbage()
+            collectgarbage()
+        end)
+        nb_drawings_since_last_collectgarbage = 0
+    end
 
     local original_on_close = self._pt_onCloseWidget_orig or Menu.onCloseWidget
     if original_on_close then

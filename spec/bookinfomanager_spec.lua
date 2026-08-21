@@ -410,7 +410,7 @@ describe("BookInfoManager", function()
                 if sql:match("SELECT directory, filename FROM bookinfo") and sql:match("has_cover = 'Y'") then
                     if sql:match("directory%s*=%?") then
                         direct_select_found = true
-                    elseif sql:match("directory LIKE %? ESCAPE '\\'") then
+                    elseif sql:match("directory%s*>=%?") and sql:match("directory%s*<%?") then
                         subtree_select_found = true
                     end
                 end
@@ -418,6 +418,84 @@ describe("BookInfoManager", function()
 
             assert.is_true(direct_select_found)
             assert.is_true(subtree_select_found)
+        end)
+
+        it("excludes covers explicitly marked to be ignored from folder-cover candidates", function()
+            local prepared_sql = {}
+            mock_conn.prepare = function(self, sql)
+                table.insert(prepared_sql, sql)
+                return {
+                    bind = function(self, ...)
+                        return self
+                    end,
+                    step = function()
+                        return nil
+                    end,
+                    reset = function() end,
+                    finalize = function() end,
+                    clearbind = function()
+                        return {
+                            reset = function() end,
+                        }
+                    end,
+                }
+            end
+
+            BookInfoManager.db_conn = nil
+            BookInfoManager.db_created = true
+            BookInfoManager:openDbConnection()
+
+            local folder_selects = 0
+            for _, sql in ipairs(prepared_sql) do
+                if sql:match("SELECT directory, filename FROM bookinfo") then
+                    folder_selects = folder_selects + 1
+                    assert.match("ignore_cover IS NULL", sql)
+                end
+            end
+            assert.equal(2, folder_selects)
+        end)
+
+        it("normalizes root folder binds for exact and subtree candidate queries", function()
+            local prepared = {}
+            mock_conn.prepare = function(self, sql)
+                local statement = {
+                    sql = sql,
+                    bind = function(self, ...)
+                        self.bound_values = { ... }
+                        return self
+                    end,
+                    step = function()
+                        return nil
+                    end,
+                    reset = function() end,
+                    finalize = function() end,
+                    clearbind = function(self)
+                        return self
+                    end,
+                }
+                prepared[#prepared + 1] = statement
+                return statement
+            end
+            package.loaded["util"].directoryExists = function(path)
+                return path == "/"
+            end
+
+            BookInfoManager.db_conn = nil
+            BookInfoManager.db_created = true
+            BookInfoManager:getFolderCoverCandidateFilepaths("/", false)
+            BookInfoManager:getFolderCoverCandidateFilepaths("/", true)
+
+            local direct_values
+            local subtree_values
+            for _, statement in ipairs(prepared) do
+                if statement.sql:match("directory%s*=%?") then
+                    direct_values = statement.bound_values
+                elseif statement.sql:match("directory%s*>=%?") then
+                    subtree_values = statement.bound_values
+                end
+            end
+            assert.same({ "/" }, direct_values)
+            assert.same({ "/", "0" }, subtree_values)
         end)
 
         it("returns the final four deterministic folder-cover candidates across the full subtree", function()
@@ -462,7 +540,7 @@ describe("BookInfoManager", function()
 
             local result = BookInfoManager:getFolderCoverCandidateFilepaths("/books/library", true)
 
-            assert.equal("/books/library/%", bound_values[1])
+            assert.same({ "/books/library/", "/books/library0" }, bound_values)
             assert.same({
                 "/books/library/01.epub",
                 "/books/library/14.epub",
@@ -524,6 +602,85 @@ describe("BookInfoManager", function()
             assert.equal(64, file_exists_calls)
             assert.equal(64, step_calls)
         end)
+
+        it("continues past stale rows until it finds valid folder-cover candidates", function()
+            local step_calls = 0
+            local rows = {}
+            for i = 1, 64 do
+                rows[i] = { "/books/library/", string.format("stale-%03d.epub", i) }
+            end
+            rows[65] = { "/books/library/", "valid.epub" }
+            mock_conn.prepare = function(self, sql)
+                return {
+                    bind = function(self, ...)
+                        return self
+                    end,
+                    step = function(self)
+                        step_calls = step_calls + 1
+                        return table.remove(rows, 1)
+                    end,
+                    reset = function() end,
+                    finalize = function() end,
+                    clearbind = function(self)
+                        return self
+                    end,
+                }
+            end
+            package.loaded["util"].directoryExists = function(path)
+                return path == "/books/library"
+            end
+            package.loaded["util"].fileExists = function(path)
+                return path == "/books/library/valid.epub"
+            end
+
+            BookInfoManager.db_conn = nil
+            BookInfoManager.db_created = true
+
+            local result = BookInfoManager:getFolderCoverCandidateFilepaths("/books/library", true)
+
+            assert.same({ "/books/library/valid.epub" }, result)
+            assert.equal(66, step_calls)
+        end)
+
+        it("prefers direct-folder covers while filling remaining slots from descendants", function()
+            local rows = {
+                { "/books/library/", "direct-a.epub" },
+                { "/books/library/", "direct-b.epub" },
+                { "/books/library/", "direct-c.epub" },
+            }
+            for index = 1, 8 do
+                rows[#rows + 1] = {
+                    "/books/library/sub/",
+                    string.format("descendant-%02d.epub", index),
+                }
+            end
+            local stmt = {
+                bind = function() end,
+                step = function()
+                    return table.remove(rows, 1)
+                end,
+                clearbind = function(self) return self end,
+                reset = function(self) return self end,
+            }
+            mock_conn.prepare = function()
+                return stmt
+            end
+            mock_conn.exec = function() return true end
+            package.loaded["util"].directoryExists = function() return true end
+            package.loaded["util"].fileExists = function() return true end
+            BookInfoManager.db_conn = nil
+            BookInfoManager.db_created = true
+
+            local result = BookInfoManager:getFolderCoverCandidateFilepaths("/books/library", true)
+
+            assert.same({
+                "/books/library/direct-a.epub",
+                "/books/library/direct-b.epub",
+                "/books/library/direct-c.epub",
+                "/books/library/sub/descendant-01.epub",
+            }, result)
+        end)
+
     end)
 
     describe("Cover cache safety", function()
@@ -537,6 +694,25 @@ describe("BookInfoManager", function()
             assert.is_table(cache)
             assert.equal(BookInfoManager.max_cover_dimen * BookInfoManager.max_cover_dimen * 2, cache.avg_itemsize)
             assert.equal(35, cache.slots)
+        end)
+
+        it("reduces the cover-cache budget when free memory is constrained", function()
+            local util = package.loaded["util"]
+            local original_calc_free_mem = util.calcFreeMem
+            util.calcFreeMem = function()
+                return 32 * 1024 * 1024
+            end
+            package.loaded["bookinfomanager"] = nil
+            BookInfoManager = require("bookinfomanager")
+            BookInfoManager:clearCoverCache()
+
+            local cache = created_cover_caches[#created_cover_caches]
+
+            util.calcFreeMem = original_calc_free_mem
+            package.loaded["bookinfomanager"] = nil
+            BookInfoManager = require("bookinfomanager")
+            assert.equal(4 * 1024 * 1024, cache.size)
+            assert.is_true(cache.slots < 35)
         end)
 
         it("stores a clone so later caller mutations do not poison the cache", function()
@@ -668,6 +844,39 @@ describe("BookInfoManager", function()
             BookInfoManager:clearCoverCache()
 
             assert.equal(1, folder_cache_clear_count)
+        end)
+    end)
+
+    describe("Parent cache invalidation after background extraction", function()
+        it("invalidates parent cover and folder caches when a child process finishes", function()
+            local filepath = "/books/refreshed.epub"
+            local FFIUtil = package.loaded["ffi/util"]
+            local UIManager = package.loaded["ui/uimanager"]
+            local Device = package.loaded["device"]
+            FFIUtil.isSubProcessDone = function(pid)
+                return pid == 1234
+            end
+            UIManager.allowStandby = function() end
+            Device.enableCPUCores = function() end
+
+            BookInfoManager:clearCoverCache()
+            BookInfoManager:cacheCover(filepath, {
+                has_cover = "Y",
+                cover_h = 1,
+                cover_bb_stride = 1024,
+                cover_bb = { id = "stale" },
+            })
+            folder_cache_invalidations = {}
+            BookInfoManager.subprocesses_pids = { 1234 }
+            BookInfoManager.subprocess_filepaths = {
+                [1234] = { filepath },
+            }
+
+            BookInfoManager:collectSubprocesses()
+
+            assert.is_nil(BookInfoManager:getCachedCover(filepath))
+            assert.same({ filepath }, folder_cache_invalidations)
+            assert.is_nil(BookInfoManager.subprocess_filepaths[1234])
         end)
     end)
 end)

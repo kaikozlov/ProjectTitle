@@ -28,6 +28,14 @@ describe("ListMenu Page Count", function()
                     language = "en"
                 }
             end,
+            getBookInfoBatch = function(self, filepaths, do_cover)
+                local results = {}
+                for _, filepath in ipairs(filepaths) do
+                    results[filepath] = self:getBookInfo(filepath, do_cover)
+                end
+                return results
+            end,
+            isBatchMiss = function() return false end,
             getCachedCoverSize = function() return 100, 100, 1 end
         }
         

@@ -29,6 +29,14 @@ describe("MosaicMenu Title Fallback Whitespace", function()
                     ignore_meta = false
                 }
             end,
+            getBookInfoBatch = function(self, filepaths, do_cover)
+                local results = {}
+                for _, filepath in ipairs(filepaths) do
+                    results[filepath] = self:getBookInfo(filepath, do_cover)
+                end
+                return results
+            end,
+            isBatchMiss = function() return false end,
             getCachedCoverSize = function() return 100, 150, 1 end
         }
         package.loaded["bookinfomanager"] = BookInfoManagerMock

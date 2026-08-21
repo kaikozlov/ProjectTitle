@@ -1,15 +1,15 @@
 --[[
-    End-to-End Performance Tests
+    Render-path operation regression tests
 
-    These tests verify that the plugin meets overall performance targets
-    after all optimizations have been applied.
+    These mocked tests verify query batching and cache behavior only. They do
+    not claim wall-clock KOReader or device performance.
 
     Run with: busted spec/performance/e2e_spec.lua
 ]]
 
 local mock_ui = require("spec.support.mock_ui")
 
-describe("End-to-End Performance", function()
+describe("Render-path operation regressions", function()
 
     local MosaicMenu
     local ListMenu
@@ -143,50 +143,6 @@ describe("End-to-End Performance", function()
         end
     end)
 
-    describe("Render Performance", function()
-        it("renders mosaic page with 9 items in under 100ms", function()
-            local render_context = mock_ui.default_render_context()
-            local menu = create_mosaic_menu({
-                perpage = 9,
-                nb_cols = 3,
-                nb_rows = 3,
-                item_count = 9,
-                render_context = render_context,
-            })
-
-            -- Mixin MosaicMenu methods
-            for k, v in pairs(MosaicMenu) do menu[k] = v end
-
-            -- Measure build time
-            local start_time = os.clock()
-            menu:_updateItemsBuildUI()
-            local elapsed = (os.clock() - start_time) * 1000
-
-            -- Verify it completes in under 100ms
-            assert.is_true(elapsed < 100, string.format(
-                "Mosaic page render took %.2fms, expected < 100ms", elapsed))
-        end)
-
-        it("renders list page with 7 items in under 100ms", function()
-            local render_context = mock_ui.default_render_context()
-            local menu = create_list_menu({
-                perpage = 7,
-                item_count = 7,
-                render_context = render_context,
-            })
-
-            -- Mixin ListMenu methods
-            for k, v in pairs(ListMenu) do menu[k] = v end
-
-            -- Measure build time
-            local start_time = os.clock()
-            menu:_updateItemsBuildUI()
-            local elapsed = (os.clock() - start_time) * 1000
-
-            assert.is_true(elapsed < 100, string.format(
-                "List page render took %.2fms, expected < 100ms", elapsed))
-        end)
-    end)
 
     describe("Database Query Efficiency", function()
         it("uses batch query for multiple items", function()

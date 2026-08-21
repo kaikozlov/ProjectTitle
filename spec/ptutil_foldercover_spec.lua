@@ -326,6 +326,66 @@ describe("ptutil Folder Cover Generation", function()
             assert.is_nil(result)
         end)
 
+        it("defensively excludes ignored covers during candidate hydration", function()
+            local ignored_bb = { id = "ignored" }
+            local visible_bb = { id = "visible" }
+            local original_candidates = BookInfoManager_mock.getFolderCoverCandidateFilepaths
+            local original_get_bookinfo_batch = BookInfoManager_mock.getBookInfoBatch
+            local ImageWidget = package.loaded["ui/widget/imagewidget"]
+            local original_image_new = ImageWidget.new
+            local rendered_images = {}
+            BookInfoManager_mock.getFolderCoverCandidateFilepaths = function()
+                return { "/books/folder/ignored.epub", "/books/folder/visible.epub" }
+            end
+            BookInfoManager_mock.getBookInfoBatch = function()
+                return {
+                    ["/books/folder/ignored.epub"] = {
+                        cover_bb = ignored_bb,
+                        cover_w = 100,
+                        cover_h = 150,
+                        ignore_cover = "Y",
+                    },
+                    ["/books/folder/visible.epub"] = {
+                        cover_bb = visible_bb,
+                        cover_w = 100,
+                        cover_h = 150,
+                    },
+                }
+            end
+            ImageWidget.new = function(self, opts)
+                if opts and opts.image then
+                    rendered_images[#rendered_images + 1] = opts.image
+                end
+                return original_image_new(self, opts)
+            end
+
+            local result = ptutil.getSubfolderCoverImages("/books/folder", 100, 100)
+
+            BookInfoManager_mock.getFolderCoverCandidateFilepaths = original_candidates
+            BookInfoManager_mock.getBookInfoBatch = original_get_bookinfo_batch
+            ImageWidget.new = original_image_new
+            assert.is_not_nil(result)
+            assert.same({ visible_bb }, rendered_images)
+        end)
+
+        it("caches empty folder-cover selections across repeated renders", function()
+            local query_calls = 0
+            local queried_subtree
+            BookInfoManager_mock.getFolderCoverCandidateFilepaths = function(_, _, include_subfolders)
+                query_calls = query_calls + 1
+                queried_subtree = include_subfolders
+                return nil
+            end
+
+            local first = ptutil.getSubfolderCoverImages("/books/empty", 100, 100)
+            local second = ptutil.getSubfolderCoverImages("/books/empty", 100, 100)
+
+            assert.is_nil(first)
+            assert.is_nil(second)
+            assert.equal(1, query_calls)
+            assert.is_true(queried_subtree)
+        end)
+
         it("reuses cached folder-cover selections across different dimensions", function()
             local query_calls = 0
             local original_get_folder_cover_candidate_filepaths = BookInfoManager_mock.getFolderCoverCandidateFilepaths

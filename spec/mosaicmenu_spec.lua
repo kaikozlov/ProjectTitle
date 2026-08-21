@@ -281,6 +281,114 @@ describe("MosaicMenu", function()
             assert.is_true(has_widget_named(item._underline_container[1], "ImageWidget"))
         end)
 
+        it("starts directory text fitting at the nominal font size", function()
+            local ptutil = package.loaded["ptutil"]
+            local original_get_font_face = ptutil.getFontFace
+            local requested_sizes = {}
+            ptutil.getFontFace = function(font_name, size)
+                requested_sizes[#requested_sizes + 1] = size
+                return { size = size }
+            end
+
+            local render_context = setup_mocks.default_render_context()
+            render_context.disable_auto_foldercovers = true
+            MosaicMenuItem:new {
+                width = 120,
+                height = 160,
+                entry = { text = "Narrow directory", path = "/books/narrow" },
+                text = "Narrow directory",
+                show_parent = {},
+                mandatory = "3 books",
+                dimen = {
+                    x = 0, y = 0, w = 120, h = 160,
+                    copy = function(self)
+                        return { x = self.x, y = self.y, w = self.w, h = self.h }
+                    end,
+                },
+                menu = {
+                    render_context = render_context,
+                    getBookInfo = function()
+                        return { been_opened = false, status = "unread" }
+                    end,
+                },
+                do_cover_image = true,
+                do_hint_opened = false,
+            }
+
+            ptutil.getFontFace = original_get_font_face
+            assert.equal(ptutil.grid_defaults.dir_font_nominal, requested_sizes[1])
+        end)
+
+        it("decrements directory font size by the configured step, never clamping early", function()
+            local ptutil = package.loaded["ptutil"]
+            local original_get_font_face = ptutil.getFontFace
+            local requested_sizes = {}
+            ptutil.getFontFace = function(font_name, size)
+                requested_sizes[#requested_sizes + 1] = size
+                return { size = size }
+            end
+            local TextWidget = package.loaded["ui/widget/textwidget"]
+            local original_is_truncated = TextWidget.isTruncated
+            local original_free = TextWidget.free
+            local free_calls = 0
+            -- Truncate only the directory text (the one with max_width set);
+            -- the buggy math.min clamp made its first truncation jump 22 -> 18,
+            -- skipping 20.
+            TextWidget.isTruncated = function(self)
+                return self.text and self.text:find("Narrow directory", 1, true) ~= nil
+            end
+            TextWidget.free = function(self)
+                if self.text and self.text:find("Narrow directory", 1, true) ~= nil then
+                    free_calls = free_calls + 1
+                end
+            end
+
+            local render_context = setup_mocks.default_render_context()
+            render_context.disable_auto_foldercovers = true
+            MosaicMenuItem:new {
+                width = 120,
+                height = 160,
+                entry = { text = "Narrow directory", path = "/books/narrow" },
+                text = "Narrow directory",
+                show_parent = {},
+                mandatory = "3 books",
+                dimen = {
+                    x = 0, y = 0, w = 120, h = 160,
+                    copy = function(self)
+                        return { x = self.x, y = self.y, w = self.w, h = self.h }
+                    end,
+                },
+                menu = {
+                    render_context = render_context,
+                    getBookInfo = function()
+                        return { been_opened = false, status = "unread" }
+                    end,
+                },
+                do_cover_image = true,
+                do_hint_opened = false,
+            }
+
+            ptutil.getFontFace = original_get_font_face
+            TextWidget.isTruncated = original_is_truncated
+            TextWidget.free = original_free
+
+            -- The ladder must step by fontsize_dec_step through every
+            -- intermediate size down to dir_font_min. The old math.min clamp
+            -- collapsed the first truncation straight to dir_font_min.
+            local step = ptutil.grid_defaults.fontsize_dec_step
+            local expected_size = ptutil.grid_defaults.dir_font_nominal
+            local index = 1
+            while expected_size >= ptutil.grid_defaults.dir_font_min do
+                assert.equal(expected_size, requested_sizes[index],
+                    "directory text ladder broke at step " .. index)
+                expected_size = expected_size - step
+                index = index + 1
+            end
+            -- Every rejected ladder widget must be freed before rebuilding:
+            -- 5 builds (22,21,20,19,18), the first 4 rejected and freed.
+            assert.equal(4, free_calls)
+        end)
+
         it("does not create a cover_info_cache during mosaic rendering", function()
             local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
             local menu = {
@@ -327,6 +435,65 @@ describe("MosaicMenu", function()
             BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
 
             assert.is_nil(menu.cover_info_cache)
+        end)
+
+        it("frees rejected mosaic title overlay trees", function()
+            local FrameContainer = package.loaded["ui/widget/container/framecontainer"]
+            local original_new = FrameContainer.new
+            local created_info_containers = 0
+            local freed_info_containers = 0
+            FrameContainer.new = function(self, opts)
+                local widget = original_new(self, opts)
+                if opts and opts.background == 0 and opts[1] and opts[1].name == "VerticalGroup" then
+                    created_info_containers = created_info_containers + 1
+                    local original_free = widget.free
+                    widget.free = function(this, ...)
+                        freed_info_containers = freed_info_containers + 1
+                        return original_free(this, ...)
+                    end
+                end
+                return widget
+            end
+
+            local render_context = setup_mocks.default_render_context()
+            render_context.show_mosaic_titles = true
+            MosaicMenuItem:new {
+                height = 80,
+                width = 120,
+                entry = { text = "Book", file = "/books/book.epub" },
+                text = "Book",
+                show_parent = {},
+                mandatory = "100",
+                dimen = {
+                    x = 0, y = 0, w = 120, h = 80,
+                    copy = function(self)
+                        return { x = self.x, y = self.y, w = self.w, h = self.h }
+                    end,
+                },
+                menu = {
+                    render_context = render_context,
+                    getBookInfo = function()
+                        return { been_opened = false, status = "unread" }
+                    end,
+                    _bookinfo_batch = {
+                        ["/books/book.epub"] = {
+                            cover_fetched = true,
+                            has_cover = true,
+                            cover_bb = {},
+                            cover_w = 100,
+                            cover_h = 150,
+                            title = "A title",
+                            authors = "An author",
+                        },
+                    },
+                },
+                do_cover_image = true,
+                do_hint_opened = false,
+            }
+
+            FrameContainer.new = original_new
+            assert.equal(2, created_info_containers)
+            assert.equal(created_info_containers, freed_info_containers)
         end)
 
         it("does not fall back to single-item book info lookups for batch misses during initial build", function()
@@ -389,7 +556,8 @@ describe("MosaicMenu", function()
                 nb_cols = 3,
                 item_margin = 10,
                 item_table = {
-                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub", is_file = true },
+                    { text = "Collection Book", file = "/books/collection.epub" },
+                    { text = "Browser Book", path = "/books/browser.epub", is_file = true },
                     { text = "Folder 1", path = "/books/folder1" },
                     { text = "Go Up", path = "/books/..", is_go_up = true },
                 },
@@ -411,15 +579,15 @@ describe("MosaicMenu", function()
             BookInfoManager.getBookInfoBatch = function(self, filepaths, do_cover)
                 seen_filepaths = filepaths
                 return {
-                    ["/books/book1.epub"] = BookInfoManager.BATCH_MISS,
+                    ["/books/collection.epub"] = BookInfoManager.BATCH_MISS,
+                    ["/books/browser.epub"] = BookInfoManager.BATCH_MISS,
                 }
             end
-
             menu:_updateItemsBuildUI()
 
             BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
 
-            assert.are.same({ "/books/book1.epub" }, seen_filepaths)
+            assert.are.same({ "/books/collection.epub", "/books/browser.epub" }, seen_filepaths)
         end)
 
         it("rebuilds overlays from item-local pathchooser state after another menu updates", function()

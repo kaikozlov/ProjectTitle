@@ -353,7 +353,10 @@ function ListMenuItem:update()
             end
         end
 
-        local book_info = self.menu.getBookInfo(self.filepath)
+        local book_info = self.do_filename_only and {
+            been_opened = false,
+            status = "unread",
+        } or self.menu.getBookInfo(self.filepath)
         self.been_opened = book_info.been_opened
         if bookinfo then -- This file is known, including PathChooser stand-ins for unsupported files
             self.bookinfo_found = true
@@ -479,8 +482,12 @@ function ListMenuItem:update()
                 pages = book_info.pages
             end
 
-            local est_page_count, draw_progressbar = ptutil.showProgressBar(pages, render_context)
-            self.pages = est_page_count
+            local est_page_count
+            local draw_progressbar = false
+            if not self.do_filename_only then
+                est_page_count, draw_progressbar = ptutil.showProgressBar(pages, render_context)
+                self.pages = est_page_count
+            end
             -- bookinfo.pages = est_page_count
 
             if draw_progressbar then
@@ -625,7 +632,7 @@ function ListMenuItem:update()
             end
 
             -- show progress text, page text, and/or file info text
-            if render_context.hide_file_info then
+            if not self.do_filename_only and render_context.hide_file_info then
                 progress_str, percent_str, pages_str = ptutil.formatProgressText(status, bookinfo, pages,
                     draw_progressbar, percent_finished, progress_strings, render_context)
 
@@ -741,7 +748,7 @@ function ListMenuItem:update()
                         table.insert(wright_items, 1, wprogressinfo)
                     end
                 end
-            else
+            elseif not self.do_filename_only then
                 local wfileinfo = TextWidget:new {
                     text = fileinfo_str,
                     face = wright_font_face,
@@ -1392,8 +1399,9 @@ function ListMenu:_updateItemsBuildUI()
         for idx = 1, self.perpage do
             local index = idx_offset + idx
             local entry = self.item_table[index]
-            if entry and entry.path and entry.is_file and not entry.is_go_up then
-                table.insert(filepaths, entry.path)
+            local filepath = entry and (entry.file or (entry.is_file and entry.path))
+            if filepath and not entry.is_go_up then
+                table.insert(filepaths, filepath)
             end
         end
     end

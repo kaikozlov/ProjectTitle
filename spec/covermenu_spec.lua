@@ -504,13 +504,45 @@ describe("CoverMenu", function()
 
     end)
 
+    describe("display-menu teardown", function()
+        it("unschedules a live footer action before removing display hooks", function()
+            local unscheduled_action
+            local UIManager = package.loaded["ui/uimanager"]
+            local original_unschedule = UIManager.unschedule
+            UIManager.unschedule = function(_, action)
+                unscheduled_action = action
+            end
+            local menu = {
+                footer_refresh_action = "footer-refresh",
+                updateItems = CoverMenu.updateItems,
+            }
+
+            CoverMenu.configureDisplayMenu(menu, nil)
+
+            UIManager.unschedule = original_unschedule
+            assert.equal("footer-refresh", unscheduled_action)
+            assert.is_nil(menu.footer_refresh_action)
+        end)
+
+        it("preserves an explicit false opened-hint setting", function()
+            local menu = {}
+
+            CoverMenu.configureDisplayMenu(menu, "list_image_meta", {
+                do_hint_opened = false,
+            })
+
+            assert.is_false(menu._do_hint_opened)
+        end)
+    end)
+
     describe("onCloseWidget", function()
-        it("terminates background jobs", function()
+        it("terminates background jobs for the owning file browser", function()
             local terminated = false
             BookInfoManager.terminateBackgroundJobs = function() terminated = true end
 
             local menu = {
                 item_group = { free = function() end },
+                _pt_owns_bookinfo_session = true,
                 _covermenu_onclose_done = false
             }
             for k, v in pairs(CoverMenu) do menu[k] = v end
@@ -520,12 +552,13 @@ describe("CoverMenu", function()
             assert.is_true(terminated)
         end)
 
-        it("closes database connection", function()
+        it("closes database connection for the owning file browser", function()
             local closed = false
             BookInfoManager.closeDbConnection = function() closed = true end
 
             local menu = {
                 item_group = { free = function() end },
+                _pt_owns_bookinfo_session = true,
                 _covermenu_onclose_done = false
             }
             for k, v in pairs(CoverMenu) do menu[k] = v end
@@ -535,12 +568,13 @@ describe("CoverMenu", function()
             assert.is_true(closed)
         end)
 
-        it("cleans up temporary resources", function()
+        it("cleans up temporary resources for the owning file browser", function()
             local cleaned = false
             BookInfoManager.cleanUp = function() cleaned = true end
 
             local menu = {
                 item_group = { free = function() end },
+                _pt_owns_bookinfo_session = true,
                 _covermenu_onclose_done = false
             }
             for k, v in pairs(CoverMenu) do menu[k] = v end
@@ -624,6 +658,7 @@ describe("CoverMenu", function()
 
             local menu = {
                 item_group = { free = function() end },
+                _pt_owns_bookinfo_session = true,
                 _covermenu_onclose_done = false
             }
             for k, v in pairs(CoverMenu) do menu[k] = v end
@@ -634,7 +669,7 @@ describe("CoverMenu", function()
 
             assert.equal(1, call_count)
         end)
-        it("clears the font-size estimator cache on close", function()
+        it("clears the font-size estimator cache when the owning file browser closes", function()
             local ptutil = require("ptutil")
             local cleared = 0
             local original_clear = ptutil.clearFontSizeCache
@@ -644,6 +679,7 @@ describe("CoverMenu", function()
 
             local menu = {
                 item_group = { free = function() end },
+                _pt_owns_bookinfo_session = true,
                 _covermenu_onclose_done = false
             }
             for k, v in pairs(CoverMenu) do menu[k] = v end
@@ -653,6 +689,40 @@ describe("CoverMenu", function()
             ptutil.clearFontSizeCache = original_clear
 
             assert.equal(1, cleared)
+        end)
+
+        it("keeps shared jobs, database, and caches alive when a transient menu closes", function()
+            local terminate_calls = 0
+            local close_calls = 0
+            local cleanup_calls = 0
+            local folder_cache_clears = 0
+            local ptutil = require("ptutil")
+            local original_terminate = BookInfoManager.terminateBackgroundJobs
+            local original_close = BookInfoManager.closeDbConnection
+            local original_cleanup = BookInfoManager.cleanUp
+            local original_clear_folder = ptutil.clearFolderCoverCache
+            BookInfoManager.terminateBackgroundJobs = function() terminate_calls = terminate_calls + 1 end
+            BookInfoManager.closeDbConnection = function() close_calls = close_calls + 1 end
+            BookInfoManager.cleanUp = function() cleanup_calls = cleanup_calls + 1 end
+            ptutil.clearFolderCoverCache = function() folder_cache_clears = folder_cache_clears + 1 end
+
+            local menu = {
+                item_group = { free = function() end },
+                _pt_owns_bookinfo_session = false,
+                _covermenu_onclose_done = false,
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:onCloseWidget()
+
+            BookInfoManager.terminateBackgroundJobs = original_terminate
+            BookInfoManager.closeDbConnection = original_close
+            BookInfoManager.cleanUp = original_cleanup
+            ptutil.clearFolderCoverCache = original_clear_folder
+            assert.equal(0, terminate_calls)
+            assert.equal(0, close_calls)
+            assert.equal(0, cleanup_calls)
+            assert.equal(0, folder_cache_clears)
         end)
 
         it("calls the widget-specific original close handler when present", function()

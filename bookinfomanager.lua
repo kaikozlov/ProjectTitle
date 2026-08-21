@@ -70,7 +70,9 @@ local BOOKINFO_DB_SCHEMA = [[
         cover_bb_data       BLOB      -- blitbuffer data compressed with zstd
     );
     CREATE UNIQUE INDEX IF NOT EXISTS dir_filename ON bookinfo(directory, filename);
-    CREATE INDEX IF NOT EXISTS has_cover_directory_filename ON bookinfo(has_cover, directory, filename);
+    DROP INDEX IF EXISTS has_cover_directory_filename;
+    CREATE INDEX IF NOT EXISTS folder_cover_candidates
+        ON bookinfo(has_cover, in_progress, ignore_cover, directory, filename);
 
     -- To keep track of ProjectTitle settings
     CREATE TABLE IF NOT EXISTS config (
@@ -120,14 +122,25 @@ end
 local BookInfoManager = {}
 
 -- Cache decompressed covers with KOReader's size-aware cache wrapper.
+local COVER_CACHE_MIN_BYTES = 4 * 1024 * 1024
 local COVER_CACHE_MAX_BYTES = 24 * 1024 * 1024
+local COVER_CACHE_FREE_MEMORY_PROPORTION = 0.05
 local cover_cache = nil
+
+local function get_cover_cache_budget()
+    local free_memory = util.calcFreeMem and tonumber(util.calcFreeMem())
+    if not free_memory or free_memory <= 0 then
+        return COVER_CACHE_MAX_BYTES
+    end
+    return math.floor(math.min(COVER_CACHE_MAX_BYTES,
+        math.max(COVER_CACHE_MIN_BYTES, free_memory * COVER_CACHE_FREE_MEMORY_PROPORTION)))
+end
 
 local function get_cover_cache()
     if not cover_cache then
         local avg_itemsize = BookInfoManager.max_cover_dimen * BookInfoManager.max_cover_dimen * 2
         cover_cache = Cache:new{
-            size = COVER_CACHE_MAX_BYTES,
+            size = get_cover_cache_budget(),
             avg_itemsize = avg_itemsize,
             enable_eviction_cb = false,
         }
@@ -147,12 +160,13 @@ local BOOKINFO_IN_PROGRESS_SQL =
 "SELECT in_progress, filename, unsupported FROM bookinfo WHERE directory=? AND filename=?;"
 local BOOKINFO_FOLDER_COVER_DIRECT_SQL = [[
     SELECT directory, filename FROM bookinfo
-    WHERE in_progress=0 AND has_cover = 'Y' AND directory=?
+    WHERE has_cover = 'Y' AND in_progress=0 AND ignore_cover IS NULL AND directory=?
     ORDER BY directory ASC, filename ASC;
 ]]
 local BOOKINFO_FOLDER_COVER_SUBTREE_SQL = [[
     SELECT directory, filename FROM bookinfo
-    WHERE in_progress=0 AND has_cover = 'Y' AND directory LIKE ? ESCAPE '\'
+    WHERE has_cover = 'Y' AND in_progress=0 AND ignore_cover IS NULL
+        AND directory>=? AND directory<?
     ORDER BY directory ASC, filename ASC;
 ]]
 
@@ -182,6 +196,7 @@ function BookInfoManager:init()
     self.subprocesses_collector = nil
     self.subprocesses_collect_interval = 10 -- do that every 10 seconds
     self.subprocesses_pids = {}
+    self.subprocess_filepaths = {}
     self.subprocesses_last_added_time = 0
     self.subprocesses_killall_timeout_time = time.s(300) -- cleanup timeout for stuck subprocesses
     -- 300 seconds should be more than enough to open and get info from 9-10 books
@@ -304,6 +319,12 @@ local function select_spread_filepaths(filepaths, max_candidates)
     if not filepaths or #filepaths == 0 then
         return {}
     end
+    if max_candidates <= 0 then
+        return {}
+    end
+    if max_candidates == 1 then
+        return { filepaths[1] }
+    end
     if #filepaths <= max_candidates then
         return filepaths
     end
@@ -326,7 +347,32 @@ local function select_spread_filepaths(filepaths, max_candidates)
     return selected
 end
 
-local MAX_FOLDER_COVER_SCAN_ROWS = 64
+local MAX_FOLDER_COVER_VALID_CANDIDATES = 64
+
+local function get_folder_directory_range(folder)
+    local normalized_folder = folder == "/" and "/" or folder:gsub("/+$", "")
+    local directory_prefix = normalized_folder == "/" and "/" or normalized_folder .. "/"
+    -- Every directory beginning with a slash-terminated prefix sorts before
+    -- the same prefix with its final '/' incremented to '0' under SQLite's
+    -- BINARY collation. This gives subtree queries an indexable range.
+    return directory_prefix, directory_prefix:sub(1, -2) .. "0"
+end
+
+local function select_preferred_folder_filepaths(direct_rows, descendant_rows, max_candidates)
+    if #direct_rows >= max_candidates then
+        return select_spread_filepaths(direct_rows, max_candidates)
+    end
+
+    local selected = {}
+    for _, filepath in ipairs(direct_rows) do
+        selected[#selected + 1] = filepath
+    end
+    local descendant_selection = select_spread_filepaths(descendant_rows, max_candidates - #selected)
+    for _, filepath in ipairs(descendant_selection) do
+        selected[#selected + 1] = filepath
+    end
+    return selected
+end
 
 -- Cover Cache Management using O(1) LRU cache
 -- Returns cached bookinfo with cover if available, nil otherwise
@@ -828,39 +874,50 @@ function BookInfoManager:getFolderCoverCandidateFilepaths(folder, include_subfol
         return nil
     end
 
-    local bind_value = folder .. "/"
-    if include_subfolders then
-        local ptutil = require("ptutil")
-        bind_value = ptutil.escapeLikePattern(folder) .. "/%"
-    end
+    local directory_prefix, directory_upper_bound = get_folder_directory_range(folder)
 
     local stmt = get_folder_cover_stmt(self, include_subfolders)
-    local sampled_rows = {}
-    stmt:bind(bind_value)
+    if include_subfolders then
+        stmt:bind(directory_prefix, directory_upper_bound)
+    else
+        stmt:bind(directory_prefix)
+    end
 
-    while #sampled_rows < MAX_FOLDER_COVER_SCAN_ROWS do
+    local rows = {}
+    local direct_rows = {}
+    local descendant_rows = {}
+    -- Scan continues past stale (missing-file) rows until 64 VALID files are
+    -- found or the range is exhausted, so stale leading rows cannot hide later
+    -- valid covers. Worst-case work is proportional to stale-row count; the
+    -- indexed prefix range keeps it off full-table scans.
+    while #rows < MAX_FOLDER_COVER_VALID_CANDIDATES do
         local row = stmt:step()
         if not row then
             break
         end
-        sampled_rows[#sampled_rows + 1] = row[1] .. row[2]
+        local filepath = row[1] .. row[2]
+        if util.fileExists(filepath) then
+            rows[#rows + 1] = filepath
+            if include_subfolders and row[1] == directory_prefix then
+                direct_rows[#direct_rows + 1] = filepath
+            elseif include_subfolders then
+                descendant_rows[#descendant_rows + 1] = filepath
+            end
+        end
     end
 
     stmt:clearbind():reset()
-
-    local rows = {}
-    for _, filepath in ipairs(sampled_rows) do
-        if util.fileExists(filepath) then
-            rows[#rows + 1] = filepath
-        end
-    end
 
     if #rows == 0 then
         return nil
     end
 
-    return select_spread_filepaths(rows, 4)
+    if not include_subfolders then
+        return select_spread_filepaths(rows, 4)
+    end
+    return select_preferred_folder_filepaths(direct_rows, descendant_rows, 4)
 end
+
 function BookInfoManager:extractBookInfo(filepath, cover_specs)
     local timer = ptdbg:new()
     -- This will be run in a subprocess
@@ -1163,6 +1220,13 @@ function BookInfoManager:collectSubprocesses()
             local pid = self.subprocesses_pids[i]
             if FFIUtil.isSubProcessDone(pid) then
                 table.remove(self.subprocesses_pids, i)
+                local filepaths = self.subprocess_filepaths[pid]
+                if filepaths then
+                    for _, filepath in ipairs(filepaths) do
+                        self:invalidateCachedCover(filepath)
+                    end
+                    self.subprocess_filepaths[pid] = nil
+                end
                 -- Prevent has been issued for each bg task spawn, we must allow for each death too.
                 UIManager:allowStandby()
             end
@@ -1254,6 +1318,11 @@ function BookInfoManager:extractInBackground(files)
     -- counter on each task, and undo that inside collectSubprocesses() zombie reaper.
     UIManager:preventStandby()
     table.insert(self.subprocesses_pids, task_pid)
+    local task_filepaths = {}
+    for _, file in ipairs(files) do
+        task_filepaths[#task_filepaths + 1] = file.filepath
+    end
+    self.subprocess_filepaths[task_pid] = task_filepaths
     self.subprocesses_last_added_time = time.now()
 
     -- We need to collect terminated jobs pids (so they do not stay "zombies"
@@ -1532,6 +1601,10 @@ Do you want to prune the cache of removed books?]]
             return self:extractBookInfo(filepath, cover_specs)
         end, info)
         if not completed then
+            -- The dismissed child was killed mid-run and may have already
+            -- replaced this row (or left it in_progress); the parent's cached
+            -- cover for this file is no longer trustworthy.
+            self:invalidateCachedCover(filepath)
             if confirm_abort() then
                 break
             end
@@ -1542,6 +1615,9 @@ Do you want to prune the cache of removed books?]]
             -- don't increment i, re-process the one we interrupted
         else
             nb_done = nb_done + 1
+            -- extractBookInfo ran in a forked process, so its module-local cache
+            -- invalidation did not affect this parent process.
+            self:invalidateCachedCover(filepath)
             if success then
                 nb_success = nb_success + 1
             end

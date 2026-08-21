@@ -159,8 +159,35 @@ local curr_display_modes = {
     collections = false, -- not initialized yet
 }
 local _widget_update_item_table_funcs = {}
+local getCachedUpdateItemTableFunc
+local isProjectTitleUpdateItemTableFunc
 local series_mode = nil  -- defaults to not display series
 local author_series_order = "author_first"
+local _PathChooser_init_wrapper
+local _FileManager_setupLayout_wrapper
+local _bookstatus_originals = {}
+local _bookstatus_installed = {}
+local _bookstatus_originals_captured = false
+local _sort_originals = {}
+local _sort_installed = {}
+local _sort_originals_captured = {}
+local BOOKSTATUS_METHODS = {
+    "genHeader",
+    "getStatusContent",
+    "genBookInfoGroup",
+    "genSummaryGroup",
+    "genStatisticsGroup",
+}
+local SORT_METHODS = {
+    "title",
+    "authors",
+    "authorsswap",
+    "series",
+    "keywords",
+    "pages",
+    "fullmeta",
+    "fullmetaswap",
+}
 
 local ProjectTitle = WidgetContainer:extend {
     name = "projecttitle",
@@ -172,6 +199,35 @@ local ProjectTitle = WidgetContainer:extend {
         -- { _("Filenames List") },
     },
 }
+
+function ProjectTitle._installBookStatusOverrides()
+    if not _bookstatus_originals_captured then
+        for _, name in ipairs(BOOKSTATUS_METHODS) do
+            _bookstatus_originals[name] = BookStatusWidget[name]
+        end
+        _bookstatus_originals_captured = true
+    end
+    for _, name in ipairs(BOOKSTATUS_METHODS) do
+        local replacement = AltBookStatusWidget[name]
+        BookStatusWidget[name] = replacement
+        _bookstatus_installed[name] = replacement
+    end
+end
+
+local function restoreGlobalOverrides()
+    for _, name in ipairs(BOOKSTATUS_METHODS) do
+        if BookStatusWidget[name] == _bookstatus_installed[name] then
+            BookStatusWidget[name] = _bookstatus_originals[name]
+        end
+    end
+    if BookList.collates then
+        for _, name in ipairs(SORT_METHODS) do
+            if BookList.collates[name] == _sort_installed[name] then
+                BookList.collates[name] = _sort_originals[name]
+            end
+        end
+    end
+end
 
 function ProjectTitle:onDispatcherRegisterActions()
     Dispatcher:registerAction("dec_items_pp", {
@@ -358,11 +414,7 @@ function ProjectTitle:init()
     author_series_order = BookInfoManager:getSetting("author_series_order") or "author_first"
 
     if BookInfoManager:getSetting("use_custom_bookstatus") then
-        BookStatusWidget.genHeader = AltBookStatusWidget.genHeader
-        BookStatusWidget.getStatusContent = AltBookStatusWidget.getStatusContent
-        BookStatusWidget.genBookInfoGroup = AltBookStatusWidget.genBookInfoGroup
-        BookStatusWidget.genSummaryGroup = AltBookStatusWidget.genSummaryGroup
-        BookStatusWidget.genStatisticsGroup = AltBookStatusWidget.genStatisticsGroup
+        ProjectTitle._installBookStatusOverrides()
     end
 
     local home_dir = G_reader_settings:readSetting("home_dir")
@@ -391,12 +443,19 @@ local function restoreRuntimeOverrides(self)
     for _, widget_id in ipairs({ "history", "collections", "filesearcher" }) do
         ProjectTitle.removeFileDialogButtons(widget_id)
         local widget = _modified_widgets[widget_id]
-        widget.updateItemTable = _updateItemTable_orig_funcs[widget_id]
-        widget._pt_widget_display_mode = nil
+        if isProjectTitleUpdateItemTableFunc(widget.updateItemTable) then
+            widget.updateItemTable = _updateItemTable_orig_funcs[widget_id]
+            widget._pt_widget_display_mode = nil
+        end
     end
     ProjectTitle.removeFileDialogButtons("filemanager")
-    PathChooser.init = _PathChooser_init_orig
-    FileManager.setupLayout = _FileManager_setupLayout_orig
+    if PathChooser.init == _PathChooser_init_wrapper then
+        PathChooser.init = _PathChooser_init_orig
+    end
+    if FileManager.setupLayout == _FileManager_setupLayout_wrapper then
+        FileManager.setupLayout = _FileManager_setupLayout_orig
+    end
+    restoreGlobalOverrides()
 
     if self.ui then
         self.ui._pt_filechooser_display_mode = nil
@@ -404,9 +463,20 @@ local function restoreRuntimeOverrides(self)
     if fc and fc.updateItems == CoverMenu.updateItems then
         CoverMenu.configureFileChooser(fc, nil)
     end
-    if fc then
+    if self.ui and self.ui.setupLayout then
+        if self.ui.reinit then
+            -- reinit() preserves the currently browsed path and per-path
+            -- item positions; a bare setupLayout() would snap back to
+            -- FileManager.root_path (see FileManager:reinit in KOReader).
+            self.ui:reinit()
+        else
+            self.ui:setupLayout()
+        end
+        fc = self.ui.file_chooser
+    end
+    if fc and fc._recalculateDimen and fc.switchItemTable then
         fc:_recalculateDimen()
-        fc:switchItemTable(nil, nil, fc.prev_itemnumber, { dummy = "" }) -- dummy itemmatch to draw focus
+        fc:switchItemTable(nil, nil, fc.prev_itemnumber, { dummy = "" })
     end
     self._pt_runtime_restored = true
 end
@@ -414,6 +484,12 @@ end
 function ProjectTitle:stopPlugin()
     logger.info(ptdbg.logprefix, "Disabling plugin per user request")
     restoreRuntimeOverrides(self)
+    BookInfoManager:terminateBackgroundJobs()
+    BookInfoManager:closeDbConnection()
+    -- Let the collector purge tmpcr3cache once any still-tracked children die;
+    -- required while subprocesses are tracked (see BookInfoManager:cleanUp()).
+    BookInfoManager:cleanUp()
+    BookInfoManager:clearCoverCache()
     if self.ui then
         self.ui.coverbrowser = nil
         self.ui.projecttitle = nil
@@ -427,16 +503,11 @@ function ProjectTitle:deletePluginSettings()
     local DataStorage = require("datastorage")
     local settings_dir = DataStorage:getSettingsDir()
     restoreRuntimeOverrides(self)
-    FileChooser.updateItems = _FileChooser_updateItems_orig
-    FileChooser.onCloseWidget = _FileChooser_onCloseWidget_orig
-    FileChooser._recalculateDimen = _FileChooser__recalculateDimen_orig
-    Menu.init = _Menu_init_orig
-    Menu.updatePageInfo = _Menu_updatePageInfo_orig
-    FileChooser._updateItemsBuildUI = nil
-    FileChooser._do_cover_images = nil
-    FileChooser._do_filename_only = nil
-    FileChooser._do_hint_opened = nil
-    FileChooser._do_center_partial_rows = nil
+    -- KOReader deletes settings before stopping the plugin
+    -- (pluginloader.lua: onDeleteSettings): kill extraction children and
+    -- close our SQLite handle BEFORE removing the database file, so a live
+    -- child cannot hold it open or re-create it after deletion.
+    BookInfoManager:terminateBackgroundJobs()
     BookInfoManager:closeDbConnection()
 
     -- delete settings
@@ -732,12 +803,11 @@ function ProjectTitle:addToMainMenu(menu_items)
                         end,
                         callback = function()
                             BookInfoManager:toggleSetting("folder_up_requires_hold")
-                            if self.ui and self.ui.setupLayout then
-                                self.ui:setupLayout()
-                                fc.custom_title_bar = self.ui.title_bar
-                                fc.title_bar = self.ui.title_bar
+                            local file_chooser = self.ui and self.ui.file_chooser
+                            if file_chooser then
+                                require("covermenu").updateFolderUpButton(file_chooser)
+                                file_chooser:updateItems(1, true)
                             end
-                            fc:updateItems(1, true)
                         end,
                     },
                 },
@@ -1227,7 +1297,7 @@ local function isFileChooserConfiguredForMode(file_chooser, display_mode)
         and file_chooser.genItemTable == CoverMenu.genItemTable
 end
 
-local function getCachedUpdateItemTableFunc(display_mode)
+getCachedUpdateItemTableFunc = function(display_mode)
     if not display_mode then
         return nil
     end
@@ -1235,6 +1305,15 @@ local function getCachedUpdateItemTableFunc(display_mode)
         _widget_update_item_table_funcs[display_mode] = ProjectTitle.getUpdateItemTableFunc(display_mode)
     end
     return _widget_update_item_table_funcs[display_mode]
+end
+
+isProjectTitleUpdateItemTableFunc = function(func)
+    for _, installed_func in pairs(_widget_update_item_table_funcs) do
+        if func == installed_func then
+            return true
+        end
+    end
+    return false
 end
 
 local function isWidgetConfiguredForMode(widget_id, display_mode)
@@ -1291,49 +1370,76 @@ function ProjectTitle:setupFileManagerDisplayMode(display_mode)
 
     if not display_mode then -- classic mode
         ProjectTitle.removeFileDialogButtons("filesearcher")
-        _modified_widgets["filesearcher"].updateItemTable = _updateItemTable_orig_funcs["filesearcher"]
+        local filesearcher = _modified_widgets["filesearcher"]
+        if isProjectTitleUpdateItemTableFunc(filesearcher.updateItemTable) then
+            filesearcher.updateItemTable = _updateItemTable_orig_funcs["filesearcher"]
+        end
+        _modified_widgets["filesearcher"]._pt_widget_display_mode = nil
         ProjectTitle.removeFileDialogButtons("filemanager")
-        PathChooser.init = _PathChooser_init_orig
-        FileManager.setupLayout = _FileManager_setupLayout_orig
+        if PathChooser.init == _PathChooser_init_wrapper then
+            PathChooser.init = _PathChooser_init_orig
+        end
+        if FileManager.setupLayout == _FileManager_setupLayout_wrapper then
+            FileManager.setupLayout = _FileManager_setupLayout_orig
+        end
         if self.ui and self.ui.file_chooser then
             CoverMenu.configureFileChooser(self.ui.file_chooser, nil)
+        end
+        if self.ui and self.ui.setupLayout then
+            if self.ui.reinit then
+                -- reinit() keeps the browsed path and per-path item positions
+                -- (a bare setupLayout() would snap back to FileManager.root_path).
+                self.ui:reinit()
+            else
+                self.ui:setupLayout()
+            end
         end
         self:refreshFileManagerInstance()
         return
     end
 
     ProjectTitle.addFileDialogButtons("filesearcher")
-    _modified_widgets["filesearcher"].updateItemTable = ProjectTitle.getUpdateItemTableFunc(display_mode)
+    _modified_widgets["filesearcher"].updateItemTable = getCachedUpdateItemTableFunc(display_mode)
+    _modified_widgets["filesearcher"]._pt_widget_display_mode = display_mode
     ProjectTitle.addFileDialogButtons("filemanager")
-    PathChooser.init = function(this)
-        this._pt_pathchooser = true
-        local original_filechooser_init = FileChooser.init
-        FileChooser.init = function(path_chooser)
-            CoverMenu.configureDisplayMenu(path_chooser, display_mode, {
-                include_gen_item_table = true,
-                do_hint_opened = true,
-                prepare_menu = true,
-                is_pathchooser = true,
-            })
-            local result = original_filechooser_init(path_chooser)
-            CoverMenu.finishMenuInit(path_chooser)
-            return result
-        end
-
-        local ok, err = pcall(function()
-            if _PathChooser_init_orig then
-                _PathChooser_init_orig(this)
-            else
-                FileChooser.init(this)
+    if not _PathChooser_init_wrapper then
+        _PathChooser_init_wrapper = function(this)
+            this._pt_pathchooser = true
+            local original_filechooser_init = FileChooser.init
+            FileChooser.init = function(path_chooser)
+                CoverMenu.configureDisplayMenu(path_chooser, curr_display_modes["filemanager"], {
+                    include_gen_item_table = true,
+                    do_hint_opened = true,
+                    prepare_menu = true,
+                    is_pathchooser = true,
+                })
+                local result = original_filechooser_init(path_chooser)
+                CoverMenu.finishMenuInit(path_chooser)
+                return result
             end
-        end)
-        FileChooser.init = original_filechooser_init
 
-        if not ok then
-            error(err)
+            local ok, err = pcall(function()
+                if _PathChooser_init_orig then
+                    _PathChooser_init_orig(this)
+                else
+                    FileChooser.init(this)
+                end
+            end)
+            FileChooser.init = original_filechooser_init
+
+            if not ok then
+                error(err)
+            end
         end
     end
-    FileManager.setupLayout = CoverMenu.setupLayout
+    if PathChooser.init == _PathChooser_init_orig or PathChooser.init == _PathChooser_init_wrapper then
+        PathChooser.init = _PathChooser_init_wrapper
+    end
+    _FileManager_setupLayout_wrapper = _FileManager_setupLayout_wrapper or CoverMenu.setupLayout
+    if FileManager.setupLayout == _FileManager_setupLayout_orig
+            or FileManager.setupLayout == _FileManager_setupLayout_wrapper then
+        FileManager.setupLayout = _FileManager_setupLayout_wrapper
+    end
     if self.ui and self.ui.file_chooser then
         CoverMenu.configureFileChooser(self.ui.file_chooser, display_mode)
     end
@@ -1381,7 +1487,9 @@ function ProjectTitle.setupWidgetDisplayMode(widget_id, display_mode)
         widget._pt_widget_display_mode = display_mode
     else -- classic mode
         ProjectTitle.removeFileDialogButtons(widget_id)
-        widget.updateItemTable = _updateItemTable_orig_funcs[widget_id]
+        if isProjectTitleUpdateItemTableFunc(widget.updateItemTable) then
+            widget.updateItemTable = _updateItemTable_orig_funcs[widget_id]
+        end
         widget._pt_widget_display_mode = nil
     end
 end
@@ -1538,6 +1646,13 @@ function ProjectTitle:onSwitchToCoverList()
 end
 
 function ProjectTitle.addSortMethods()
+    BookList.collates = BookList.collates or {}
+    for _, name in ipairs(SORT_METHODS) do
+        if not _sort_originals_captured[name] then
+            _sort_originals[name] = BookList.collates[name]
+            _sort_originals_captured[name] = true
+        end
+    end
     BookList.collates.title = {
         text = _("Project: Title") .. " - " .. _("Title"),
         menu_order = 401,
@@ -1672,6 +1787,9 @@ function ProjectTitle.addSortMethods()
             return item.fullmeta
         end,
     }
+    for _, name in ipairs(SORT_METHODS) do
+        _sort_installed[name] = BookList.collates[name]
+    end
 end
 
 return ProjectTitle

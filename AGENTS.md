@@ -98,7 +98,7 @@ Or unified across all three with the `unified_display_mode` setting.
 - Font definitions using Source Sans 3 and Source Serif 4
 - Helper functions: installFonts(), installIcons(), `findCover()`, `getFolderCover()`, `query_cover_paths()`, `getSubfolderCoverImages()`
 - Formatting functions: `formatAuthors()`, `formatSeries()`, `formatAuthorSeries()`, `formatTags()`, `formatProgressText()`, `formatFooterText()`
-- Contains performance helpers used by the rendering path, including font-size caching and narrowly-scoped widget pooling
+- Contains performance helpers used by the rendering path, including narrowly-scoped widget pooling; text fitting measures real widgets from the nominal size downward
 
 **titlebar.lua**: Custom title bar with navigation buttons (up folder, favorites, history, last document)
 
@@ -111,7 +111,7 @@ Or unified across all three with the `unified_display_mode` setting.
 The plugin can auto-generate folder covers in two ways:
 
 1. **Custom folder image**: Uses explicit `pt_cover_path` when present, otherwise looks for `cover.*` or `folder.*` (jpg/png/webp/gif) in the directory via `ptutil.findCover()`
-2. **Thumbnail grid**: Gets bounded, deterministic candidates from `BookInfoManager`, batch-hydrates their metadata/covers, and displays them as:
+2. **Thumbnail grid**: Gets deterministic, index-range-scanned candidates from `BookInfoManager` (the scan continues past stale rows until 64 valid files are found, so worst case scales with stale-row count, not the whole table), batch-hydrates their metadata/covers, and displays them as:
    - 2×2 grid layout (default)
    - Diagonal stacked layout (if `use_stacked_foldercovers` enabled)
 
@@ -214,10 +214,10 @@ Tests use mocked KOReader widgets since the plugin depends on KOReader's UI fram
 ### Performance Considerations
 - Cover image extraction can be slow, especially with many files
 - Database queries are optimized with indexes on `directory, filename`
-- Folder-cover candidates use bounded deterministic database scans and batch hydration
+- Folder-cover candidates use deterministic index-range scans (continuing past stale rows) and batch hydration
 - Rendering uses a cached `render_context` to avoid repeated settings lookups in hot paths
-- Decompressed covers are cached in a byte-budgeted KOReader `Cache` in `bookinfomanager.lua`
-- `ptutil.lua` includes widget-pool and font-size-cache helpers used by the performance work on `sane`
+- Decompressed covers are cached in a free-memory-aware, byte-budgeted KOReader `Cache` in `bookinfomanager.lua`
+- `ptutil.lua` includes widget-pool helpers and stateless font-size estimation compatibility APIs
 - Cache can be pruned (removes deleted files) or emptied completely
 
 ### Localization

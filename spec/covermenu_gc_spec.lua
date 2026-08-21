@@ -109,7 +109,7 @@ describe("CoverMenu Garbage Collection", function()
         assert.equal(1, scheduled)
     end)
 
-    it("schedules forced garbage collection when closing the menu", function()
+    it("schedules forced garbage collection when closing the owning file browser", function()
         local scheduled_delay
         local UIManager = package.loaded["ui/uimanager"]
         UIManager.scheduleIn = function(_, delay, callback)
@@ -118,6 +118,7 @@ describe("CoverMenu Garbage Collection", function()
 
         local menu = build_menu({
             item_group = { free = function() end },
+            _pt_owns_bookinfo_session = true,
             _covermenu_onclose_done = false,
         })
 

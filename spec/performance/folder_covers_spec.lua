@@ -445,7 +445,7 @@ describe("Folder Cover Generation Optimization", function()
     end)
 
     describe("Query construction", function()
-        it("queries subtree folder-cover candidates through BookInfoManager with escaped LIKE wildcards", function()
+        it("queries subtree folder-cover candidates through an indexable directory range", function()
             local prepared_sql
             local bound_values
             local exec_calls = 0
@@ -487,10 +487,13 @@ describe("Folder Cover Generation Optimization", function()
             BookInfoManager:getFolderCoverCandidateFilepaths("/books/100%_semi;quote'", true)
 
             assert.equal(0, exec_calls)
-            assert.match("LIKE %?", prepared_sql)
-            assert.match("ESCAPE", prepared_sql)
+            assert.match("directory>=%?", prepared_sql)
+            assert.match("directory<%?", prepared_sql)
             assert.is_nil(prepared_sql:match("RANDOM"))
-            assert.equal("/books/100\\%\\_semi;quote'/%", bound_values[1])
+            assert.same({
+                "/books/100%_semi;quote'/",
+                "/books/100%_semi;quote'0",
+            }, bound_values)
         end)
 
         it("queries exact-directory folder-cover candidates through BookInfoManager without RANDOM sorting", function()

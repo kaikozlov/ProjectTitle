@@ -24,26 +24,6 @@ local _ = require("l10n.gettext")
 local ptdbg = require("ptdbg")
 local BookInfoManager = require("bookinfomanager")
 
-local bxor = (_G.bit and _G.bit.bxor) or (_G.bit32 and _G.bit32.bxor)
-if not bxor then
-    bxor = function(left, right)
-        local result = 0
-        local bit_value = 1
-        while left > 0 or right > 0 do
-            local left_bit = left % 2
-            local right_bit = right % 2
-            if left_bit ~= right_bit then
-                result = result + bit_value
-            end
-            left = math.floor(left / 2)
-            right = math.floor(right / 2)
-            bit_value = bit_value * 2
-        end
-        return result
-    end
-end
-
-
 --[[
     The settings and functions in this file are to intended make user patches easier.
     A user patch is the best way to customize this plugin — edits here will be lost when upgrading.
@@ -678,7 +658,7 @@ function ptutil.query_cover_paths(folder, include_subfolders)
 end
 
 local function useStackedFolderCovers(render_context)
-    if render_context and render_context.use_stacked_foldercovers ~= nil then
+    if render_context then
         return render_context.use_stacked_foldercovers
     end
     return BookInfoManager:getSetting("use_stacked_foldercovers")
@@ -726,7 +706,7 @@ local function hydrate_cover_entries(filepaths)
     end
     for _, filepath in ipairs(filepaths or {}) do
         local bookinfo = bookinfo_batch[filepath]
-        if bookinfo and bookinfo.cover_bb then
+        if bookinfo and bookinfo.cover_bb and not bookinfo.ignore_cover then
             table.insert(entries, {
                 cover_bb = bookinfo.cover_bb,
                 cover_w = bookinfo.cover_w,
@@ -882,15 +862,11 @@ function ptutil.getSubfolderCoverImages(filepath, max_w, max_h, render_context)
     local cover_filepaths = clone_folder_cover_paths(cached_filepaths)
 
     if not cover_filepaths then
-        local db_res = ptutil.query_cover_paths(filepath, false)
+        local db_res = ptutil.query_cover_paths(filepath, true)
         cover_filepaths = collect_cover_filepaths(db_res)
 
-        if #cover_filepaths < 4 then
-            db_res = ptutil.query_cover_paths(filepath, true)
-            cover_filepaths = collect_cover_filepaths(db_res)
-        end
-
         if #cover_filepaths == 0 then
+            cache_folder_cover(filepath, {})
             return nil
         end
 
@@ -927,18 +903,24 @@ ptutil.thinBlackLine  = function(w) return ptutil.line(w, Blitbuffer.COLOR_BLACK
 ptutil.mediumBlackLine  = function(w) return ptutil.line(w, Blitbuffer.COLOR_BLACK, Size.line.medium) end
 
 function ptutil.onFocus(_underline_container, render_context)
-    -- Use ~= nil check to properly handle explicit false values from render_context
-    local is_touch = (render_context and render_context.is_touch_device ~= nil) and render_context.is_touch_device or Device:isTouchDevice()
-    local force_indicator = (render_context and render_context.force_focus_indicator ~= nil) and render_context.force_focus_indicator or BookInfoManager:getSetting("force_focus_indicator")
+    local is_touch = render_context and render_context.is_touch_device
+    local force_indicator = render_context and render_context.force_focus_indicator
+    if not render_context then
+        is_touch = Device:isTouchDevice()
+        force_indicator = BookInfoManager:getSetting("force_focus_indicator")
+    end
     if not is_touch or force_indicator then
         _underline_container.color = Blitbuffer.COLOR_BLACK
     end
 end
 
 function ptutil.onUnfocus(_underline_container, render_context)
-    -- Use ~= nil check to properly handle explicit false values from render_context
-    local is_touch = (render_context and render_context.is_touch_device ~= nil) and render_context.is_touch_device or Device:isTouchDevice()
-    local force_indicator = (render_context and render_context.force_focus_indicator ~= nil) and render_context.force_focus_indicator or BookInfoManager:getSetting("force_focus_indicator")
+    local is_touch = render_context and render_context.is_touch_device
+    local force_indicator = render_context and render_context.force_focus_indicator
+    if not render_context then
+        is_touch = Device:isTouchDevice()
+        force_indicator = BookInfoManager:getSetting("force_focus_indicator")
+    end
     if not is_touch or force_indicator then
         _underline_container.color = Blitbuffer.COLOR_WHITE
     end
@@ -948,11 +930,21 @@ function ptutil.showProgressBar(pages, render_context)
     local show_progress_bar = false
     local est_page_count = pages or nil
 
-    -- Use ~= nil check to properly handle explicit false values from render_context
-    local force_max = (render_context and render_context.force_max_progressbars ~= nil) and render_context.force_max_progressbars or BookInfoManager:getSetting("force_max_progressbars")
-    local show_pages_read = (render_context and render_context.show_pages_read_as_progress ~= nil) and render_context.show_pages_read_as_progress or BookInfoManager:getSetting("show_pages_read_as_progress")
-    local hide_file_info = (render_context and render_context.hide_file_info ~= nil) and render_context.hide_file_info or BookInfoManager:getSetting("hide_file_info")
-    local force_no = (render_context and render_context.force_no_progressbars ~= nil) and render_context.force_no_progressbars or BookInfoManager:getSetting("force_no_progressbars")
+    local force_max
+    local show_pages_read
+    local hide_file_info
+    local force_no
+    if render_context then
+        force_max = render_context.force_max_progressbars
+        show_pages_read = render_context.show_pages_read_as_progress
+        hide_file_info = render_context.hide_file_info
+        force_no = render_context.force_no_progressbars
+    else
+        force_max = BookInfoManager:getSetting("force_max_progressbars")
+        show_pages_read = BookInfoManager:getSetting("show_pages_read_as_progress")
+        hide_file_info = BookInfoManager:getSetting("hide_file_info")
+        force_no = BookInfoManager:getSetting("force_no_progressbars")
+    end
 
     if force_max and not show_pages_read then
         est_page_count = ptutil.list_defaults.progress_bar_pages_per_pixel * ptutil.list_defaults.progress_bar_max_size
@@ -1306,45 +1298,9 @@ function ptutil.getMetaSummary(fullpath, swap)
     end
 end
 
--- Font size estimation cache
--- Key format: "text_len|newlines|hash|width|height|min|max"
-local font_size_cache = {}
-local font_size_cache_count = 0
-local FONT_SIZE_CACHE_MAX = 200
-
--- Clear the font size cache (e.g., on settings change or menu close)
+-- Kept for user-patch compatibility. Font estimates are deliberately
+-- stateless: hashing every title cost more than recomputing the heuristic.
 function ptutil.clearFontSizeCache()
-    font_size_cache = {}
-    font_size_cache_count = 0
-end
-
-local function cacheFontSizeEstimate(cache_key, size)
-    if font_size_cache[cache_key] ~= nil then
-        font_size_cache[cache_key] = size
-        return size
-    end
-
-    if font_size_cache_count >= FONT_SIZE_CACHE_MAX then
-        font_size_cache = {}
-        font_size_cache_count = 0
-    end
-
-    font_size_cache[cache_key] = size
-    font_size_cache_count = font_size_cache_count + 1
-    return size
-end
-
-local function get_text_fingerprint(text)
-    local newline_count = 0
-    local hash = 2166136261
-    for i = 1, #text do
-        local byte = text:byte(i)
-        if byte == 10 then
-            newline_count = newline_count + 1
-        end
-        hash = bxor(hash, byte) * 16777619 % 4294967296
-    end
-    return newline_count, hash
 end
 
 -- Quick-fit detection: determine if text will definitely fit at max size
@@ -1386,25 +1342,12 @@ function ptutil.estimateFontSize(params)
     local min_size = params.min_size or 10
     local max_size = params.max_size or 26
 
-    -- Check cache first
     local text_len = #text
-    local newline_count, text_hash = get_text_fingerprint(text)
-    -- Use math.floor to ensure all values are integers for the cache key
-    local cache_key = string.format("%d|%d|%u|%d|%d|%d|%d",
-        text_len,
-        newline_count,
-        text_hash,
-        math.floor(width),
-        math.floor(height),
-        math.floor(min_size),
-        math.floor(max_size))
-    if font_size_cache[cache_key] then
-        return font_size_cache[cache_key]
-    end
+    local _, newline_count = text:gsub("\n", "")
 
     -- Quick fit check - use max size if text is short enough
     if ptutil.isTextQuickFit(params) then
-        return cacheFontSizeEstimate(cache_key, max_size)
+        return max_size
     end
 
     -- Heuristic estimation based on text area requirements
@@ -1443,7 +1386,7 @@ function ptutil.estimateFontSize(params)
     -- Clamp to min/max bounds
     estimated_size = math.max(min_size, math.min(max_size, math.floor(estimated_size)))
 
-    return cacheFontSizeEstimate(cache_key, estimated_size)
+    return estimated_size
 end
 
 -- Widget Pool for reducing widget allocations in list/grid layout spacing.
@@ -1598,9 +1541,12 @@ function ptutil.formatProgressText(status, bookinfo, pages, draw_progressbar, pe
     local pages_str = ""
     local percent_str = ""
     local progress_str = ""
-    local show_pages_read = (render_context and render_context.show_pages_read_as_progress ~= nil)
-        and render_context.show_pages_read_as_progress
-        or BookInfoManager:getSetting("show_pages_read_as_progress")
+    local show_pages_read
+    if render_context then
+        show_pages_read = render_context.show_pages_read_as_progress
+    else
+        show_pages_read = BookInfoManager:getSetting("show_pages_read_as_progress")
+    end
 
     if status == "complete" then
         progress_str = progress_strings.finished

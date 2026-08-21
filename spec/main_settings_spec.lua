@@ -45,6 +45,19 @@ describe("Main Settings", function()
         package.loaded["apps/filemanager/filemanagercollection"] = {}
         package.loaded["dispatcher"] = {}
         package.loaded["ui/trapper"] = {}
+        package.loaded["covermenu"] = {
+            updateFolderUpButton = function(file_chooser)
+                local requires_hold = package.loaded["bookinfomanager"]:getSetting("folder_up_requires_hold")
+                local button = file_chooser.title_bar.right2_button
+                if requires_hold then
+                    button.callback = nil
+                    button.hold_callback = function() end
+                else
+                    button.callback = function() end
+                    button.hold_callback = nil
+                end
+            end,
+        }
         
         -- Mock G_reader_settings to enable plugin
         _G.G_reader_settings = {
@@ -219,27 +232,31 @@ describe("Main Settings", function()
         package.loaded["/ui/widget/doublespinwidget"] = old_absolute_loaded
     end)
 
-    it("rebuilds the title bar when toggling hold-only up-folder", function()
+    it("updates the existing up-folder button without replacing the file chooser", function()
         local updated = false
         local setup_called = false
-        local new_title_bar = { marker = "new-title-bar" }
+        local file_chooser = {
+            nb_cols_portrait = 3,
+            nb_rows_portrait = 4,
+            nb_cols_landscape = 4,
+            nb_rows_landscape = 3,
+            files_per_page = 10,
+            title_bar = {
+                right2_button = {
+                    callback = function() end,
+                    hold_callback = nil,
+                },
+            },
+            updateItems = function(_, page, force_refresh)
+                updated = page == 1 and force_refresh == true
+            end,
+        }
 
         CoverBrowser.ui = {
-            title_bar = { marker = "old-title-bar" },
-            setupLayout = function(self)
+            setupLayout = function()
                 setup_called = true
-                self.title_bar = new_title_bar
             end,
-            file_chooser = {
-                nb_cols_portrait = 3,
-                nb_rows_portrait = 4,
-                nb_cols_landscape = 4,
-                nb_rows_landscape = 3,
-                files_per_page = 10,
-                updateItems = function(_, page, force_refresh)
-                    updated = page == 1 and force_refresh == true
-                end,
-            }
+            file_chooser = file_chooser,
         }
         CoverBrowser.modes = { { "Mode 1", "mode1" } }
 
@@ -268,9 +285,10 @@ describe("Main Settings", function()
         folder_toggle.callback()
 
         assert.equal("Y", BookInfoManager:getSetting("folder_up_requires_hold"))
-        assert.is_true(setup_called)
-        assert.equal(new_title_bar, CoverBrowser.ui.file_chooser.custom_title_bar)
-        assert.equal(new_title_bar, CoverBrowser.ui.file_chooser.title_bar)
+        assert.is_false(setup_called)
+        assert.equal(file_chooser, CoverBrowser.ui.file_chooser)
+        assert.is_nil(file_chooser.title_bar.right2_button.callback)
+        assert.is_function(file_chooser.title_bar.right2_button.hold_callback)
         assert.is_true(updated)
     end)
 

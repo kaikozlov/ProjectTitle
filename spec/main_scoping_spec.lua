@@ -5,6 +5,8 @@ describe("Main Menu Scoping", function()
     local SAFE_VERSION = 202607000000
     local CoverBrowser
     local CoverMenu
+    local PathChooser, FileManager
+    local stock_pathchooser_init, stock_filemanager_setuplayout
 
     setup(function()
         if not _G.unpack then _G.unpack = table.unpack end
@@ -121,6 +123,21 @@ describe("Main Menu Scoping", function()
         CoverMenu = require("covermenu")
         local BookInfoManager = require("bookinfomanager")
         BookInfoManager.closeDbConnection = function() end
+        BookInfoManager.terminateBackgroundJobs = function() end
+        BookInfoManager.cleanUp = function() end
+
+        -- main.lua captured these stock hooks at require time just now; specs
+        -- that enable a rich mode leave ProjectTitle's wrappers installed, so
+        -- remember the stock pair here and restore after every spec.
+        PathChooser = package.loaded["ui/widget/pathchooser"]
+        FileManager = package.loaded["apps/filemanager/filemanager"]
+        stock_pathchooser_init = PathChooser.init
+        stock_filemanager_setuplayout = FileManager.setupLayout
+    end)
+
+    after_each(function()
+        PathChooser.init = stock_pathchooser_init
+        FileManager.setupLayout = stock_filemanager_setuplayout
     end)
 
     it("does not replace shared Menu methods when enabling file manager mode", function()
@@ -544,7 +561,8 @@ describe("Main Menu Scoping", function()
         assert.equal("list_image_meta", collection_widget._pt_widget_display_mode)
     end)
 
-    it("keeps file manager wiring coherent across mode toggles", function()
+    it("rebuilds the live file manager with the stock layout when returning to classic mode", function()
+        local FileChooser = package.loaded["ui/widget/filechooser"]
         local file_chooser = {
             updateItems = function() end,
             onCloseWidget = function() end,
@@ -552,8 +570,20 @@ describe("Main Menu Scoping", function()
             _recalculateDimen = function() end,
             switchItemTable = function() end,
         }
+        local layout_rebuilds = 0
         CoverBrowser.ui = {
             file_chooser = file_chooser,
+            setupLayout = function(self)
+                layout_rebuilds = layout_rebuilds + 1
+                self.file_chooser = {
+                    stock_layout = true,
+                    updateItems = FileChooser.updateItems,
+                    onCloseWidget = FileChooser.onCloseWidget,
+                    genItemTable = FileChooser.genItemTable,
+                    _recalculateDimen = FileChooser._recalculateDimen,
+                    switchItemTable = function() end,
+                }
+            end,
         }
         CoverBrowser.refreshFileManagerInstance = function() end
 
@@ -564,13 +594,14 @@ describe("Main Menu Scoping", function()
 
         CoverBrowser:setupFileManagerDisplayMode("mosaic_image")
         assert.equal("mosaic", file_chooser.display_mode_type)
-        assert.equal(CoverMenu.updateItems, file_chooser.updateItems)
-        assert.equal(CoverMenu.genItemTable, file_chooser.genItemTable)
 
         CoverBrowser:setupFileManagerDisplayMode(nil)
-        assert.is_nil(file_chooser.display_mode_type)
-        assert.equal(package.loaded["ui/widget/filechooser"].updateItems, file_chooser.updateItems)
-        assert.equal(package.loaded["ui/widget/filechooser"].genItemTable, file_chooser.genItemTable)
+
+        assert.equal(1, layout_rebuilds)
+        assert.is_true(CoverBrowser.ui.file_chooser.stock_layout)
+        assert.is_not_equal(file_chooser, CoverBrowser.ui.file_chooser)
+        assert.equal(FileChooser.updateItems, CoverBrowser.ui.file_chooser.updateItems)
+        assert.equal(FileChooser.genItemTable, CoverBrowser.ui.file_chooser.genItemTable)
     end)
 
     it("restores shared PathChooser init when returning to classic mode", function()
@@ -595,12 +626,108 @@ describe("Main Menu Scoping", function()
         assert.equal(original_init, PathChooser.init)
     end)
 
+    it("does not clobber later shared hooks when switching between rich modes", function()
+        local PathChooser = package.loaded["ui/widget/pathchooser"]
+        local FileManager = package.loaded["apps/filemanager/filemanager"]
+        local FileChooser = package.loaded["ui/widget/filechooser"]
+        local original_pathchooser_init = PathChooser.init
+        local original_filemanager_layout = FileManager.setupLayout
+        CoverBrowser.ui = {
+            file_chooser = {
+                updateItems = FileChooser.updateItems,
+                onCloseWidget = FileChooser.onCloseWidget,
+                genItemTable = FileChooser.genItemTable,
+                _recalculateDimen = FileChooser._recalculateDimen,
+                switchItemTable = function() end,
+            },
+        }
+        CoverBrowser.refreshFileManagerInstance = function() end
+
+        CoverBrowser:setupFileManagerDisplayMode("list_image_meta")
+        local later_pathchooser_hook = function() end
+        local later_filemanager_hook = function() end
+        PathChooser.init = later_pathchooser_hook
+        FileManager.setupLayout = later_filemanager_hook
+
+        CoverBrowser:setupFileManagerDisplayMode("mosaic_image")
+
+        assert.equal(later_pathchooser_hook, PathChooser.init)
+        assert.equal(later_filemanager_hook, FileManager.setupLayout)
+        PathChooser.init = original_pathchooser_init
+        FileManager.setupLayout = original_filemanager_layout
+        CoverBrowser:setupFileManagerDisplayMode(nil)
+    end)
+
+    it("does not clobber later widget hooks when returning to classic mode", function()
+        local FileChooser = package.loaded["ui/widget/filechooser"]
+        local history = package.loaded["apps/filemanager/filemanagerhistory"]
+        local filesearcher = package.loaded["apps/filemanager/filemanagerfilesearcher"]
+        local original_history_update = history.updateItemTable
+        local original_filesearcher_update = filesearcher.updateItemTable
+        CoverBrowser.ui = {
+            file_chooser = {
+                updateItems = FileChooser.updateItems,
+                onCloseWidget = FileChooser.onCloseWidget,
+                genItemTable = FileChooser.genItemTable,
+                _recalculateDimen = FileChooser._recalculateDimen,
+                switchItemTable = function() end,
+            },
+        }
+        CoverBrowser.refreshFileManagerInstance = function() end
+
+        CoverBrowser:setupFileManagerDisplayMode("list_image_meta")
+        CoverBrowser.setupWidgetDisplayMode("history", "list_image_meta")
+        local later_history_hook = function() end
+        local later_filesearcher_hook = function() end
+        history.updateItemTable = later_history_hook
+        filesearcher.updateItemTable = later_filesearcher_hook
+
+        CoverBrowser.setupWidgetDisplayMode("history", nil)
+        CoverBrowser:setupFileManagerDisplayMode(nil)
+
+        assert.equal(later_history_hook, history.updateItemTable)
+        assert.equal(later_filesearcher_hook, filesearcher.updateItemTable)
+        history.updateItemTable = original_history_update
+        filesearcher.updateItemTable = original_filesearcher_update
+    end)
+
     it("restores instance-scoped overrides when the plugin stops", function()
         local PathChooser = package.loaded["ui/widget/pathchooser"]
         local FileChooser = package.loaded["ui/widget/filechooser"]
+        local FileManager = package.loaded["apps/filemanager/filemanager"]
+        local BookStatusWidget = package.loaded["ui/widget/bookstatuswidget"]
+        local AltBookStatusWidget = package.loaded["altbookstatuswidget"]
+        local BookList = package.loaded["ui/widget/booklist"]
         local history = package.loaded["apps/filemanager/filemanagerhistory"]
         local collections = package.loaded["apps/filemanager/filemanagercollection"]
         local filesearcher = package.loaded["apps/filemanager/filemanagerfilesearcher"]
+        local BookInfoManager = package.loaded["bookinfomanager"]
+        local clear_cover_cache_calls = 0
+        local original_clear_cover_cache = BookInfoManager.clearCoverCache
+        BookInfoManager.clearCoverCache = function()
+            clear_cover_cache_calls = clear_cover_cache_calls + 1
+        end
+        local original_status_methods = {
+            genHeader = function() end,
+            getStatusContent = function() end,
+            genBookInfoGroup = function() end,
+            genSummaryGroup = function() end,
+            genStatisticsGroup = function() end,
+        }
+        local original_title_collate = { marker = "stock-title" }
+        local original_authors_collate = { marker = "stock-authors" }
+        local original_series_collate = { marker = "stock-series" }
+        for name, method in pairs(original_status_methods) do
+            BookStatusWidget[name] = method
+            AltBookStatusWidget[name] = function() end
+        end
+        BookList.collates = {
+            title = original_title_collate,
+            authors = original_authors_collate,
+            series = original_series_collate,
+        }
+        CoverBrowser._installBookStatusOverrides()
+        CoverBrowser.addSortMethods()
         local file_chooser = {
             updateItems = FileChooser.updateItems,
             onCloseWidget = FileChooser.onCloseWidget,
@@ -620,6 +747,7 @@ describe("Main Menu Scoping", function()
         CoverBrowser.setupWidgetDisplayMode("collections", nil)
 
         local original_pathchooser_init = PathChooser.init
+        local original_filemanager_layout = FileManager.setupLayout
         local original_history_update = history.updateItemTable
         local original_collections_update = collections.updateItemTable
         local original_filesearcher_update = filesearcher.updateItemTable
@@ -627,16 +755,35 @@ describe("Main Menu Scoping", function()
         CoverBrowser:setupFileManagerDisplayMode("list_image_meta")
         CoverBrowser.setupWidgetDisplayMode("history", "list_image_meta")
         CoverBrowser.setupWidgetDisplayMode("collections", "list_image_meta")
+        assert.equal("list_image_meta", history._pt_widget_display_mode)
+        assert.is_not_equal(original_history_update, history.updateItemTable)
+        assert.is_nil(CoverBrowser._pt_runtime_restored)
+        local later_pathchooser_hook = function() end
+        local later_filemanager_hook = function() end
+        PathChooser.init = later_pathchooser_hook
+        FileManager.setupLayout = later_filemanager_hook
         CoverBrowser:stopPlugin()
 
         assert.equal(FileChooser.updateItems, file_chooser.updateItems)
         assert.equal(FileChooser.onCloseWidget, file_chooser.onCloseWidget)
         assert.equal(FileChooser.genItemTable, file_chooser.genItemTable)
         assert.equal(FileChooser._recalculateDimen, file_chooser._recalculateDimen)
-        assert.equal(original_pathchooser_init, PathChooser.init)
+        assert.is_not_equal(original_pathchooser_init, later_pathchooser_hook)
+        assert.is_not_equal(original_filemanager_layout, later_filemanager_hook)
+        assert.equal(later_pathchooser_hook, PathChooser.init)
+        assert.equal(later_filemanager_hook, FileManager.setupLayout)
         assert.equal(original_history_update, history.updateItemTable)
         assert.equal(original_collections_update, collections.updateItemTable)
         assert.equal(original_filesearcher_update, filesearcher.updateItemTable)
+        for name, method in pairs(original_status_methods) do
+            assert.equal(method, BookStatusWidget[name])
+        end
+        assert.equal(original_title_collate, BookList.collates.title)
+        assert.equal(original_authors_collate, BookList.collates.authors)
+        assert.equal(original_series_collate, BookList.collates.series)
+        assert.is_nil(BookList.collates.keywords)
+        assert.equal(1, clear_cover_cache_calls)
+        BookInfoManager.clearCoverCache = original_clear_cover_cache
         assert.is_nil(CoverBrowser.ui.coverbrowser)
         assert.is_nil(CoverBrowser.ui.projecttitle)
     end)

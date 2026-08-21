@@ -457,6 +457,13 @@ local function setup_mocks()
             _batch_miss = true,
         },
         getBookInfo = function() return nil end,
+        getBookInfoBatch = function(self, filepaths, do_cover)
+            local results = {}
+            for _, filepath in ipairs(filepaths or {}) do
+                results[filepath] = self:getBookInfo(filepath, do_cover) or self.BATCH_MISS
+            end
+            return results
+        end,
         getFolderCoverCandidateFilepaths = function() return nil end,
         getSetting = function(_, key)
             return mock_bookinfo_settings[key]

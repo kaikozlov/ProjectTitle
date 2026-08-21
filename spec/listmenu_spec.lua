@@ -504,7 +504,8 @@ describe("ListMenu", function()
                 page = 1,
                 perpage = 5,
                 item_table = {
-                    { text = "Book 1", file = "/books/book1.epub", path = "/books/book1.epub", is_file = true },
+                    { text = "History Book", file = "/books/history.epub" },
+                    { text = "Browser Book", path = "/books/browser.epub", is_file = true },
                     { text = "Folder 1", path = "/books/folder1" },
                     { text = "Go Up", path = "/books/..", is_go_up = true },
                 },
@@ -525,15 +526,15 @@ describe("ListMenu", function()
             BookInfoManager.getBookInfoBatch = function(self, filepaths, do_cover)
                 seen_filepaths = filepaths
                 return {
-                    ["/books/book1.epub"] = BookInfoManager.BATCH_MISS,
+                    ["/books/history.epub"] = BookInfoManager.BATCH_MISS,
+                    ["/books/browser.epub"] = BookInfoManager.BATCH_MISS,
                 }
             end
-
             menu:_updateItemsBuildUI()
 
             BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
 
-            assert.are.same({ "/books/book1.epub" }, seen_filepaths)
+            assert.are.same({ "/books/history.epub", "/books/browser.epub" }, seen_filepaths)
         end)
 
         it("skips page batch prefetch in filename-only mode", function()
@@ -576,11 +577,18 @@ describe("ListMenu", function()
             assert.equal(0, batch_calls)
         end)
 
-        it("skips single-book plugin lookups in filename-only mode", function()
+        it("skips all metadata and progress work in filename-only mode", function()
             local render_context = mock_ui.default_render_context()
             local original_getBookInfoBatch = BookInfoManager.getBookInfoBatch
             local original_getBookInfo = BookInfoManager.getBookInfo
-            local single_lookup_count = 0
+            local ProgressWidget = package.loaded["ui/widget/progresswidget"]
+            local original_progress_new = ProgressWidget.new
+            local ptutil = package.loaded["ptutil"]
+            local original_show_progress_bar = ptutil.showProgressBar
+            local plugin_lookup_count = 0
+            local core_lookup_count = 0
+            local progress_widget_count = 0
+            local progress_layout_count = 0
             local menu = {
                 width = 600,
                 screen_w = 600,
@@ -594,7 +602,13 @@ describe("ListMenu", function()
                 items_to_update = {},
                 itemnumber = 1,
                 getBookInfo = function()
-                    return { been_opened = false, status = "unread" }
+                    core_lookup_count = core_lookup_count + 1
+                    return {
+                        been_opened = true,
+                        status = "reading",
+                        percent_finished = 0.5,
+                        pages = 100,
+                    }
                 end,
                 item_dimen = { copy = function() return { w = 100, h = 20 } end },
                 item_width = 100,
@@ -609,16 +623,29 @@ describe("ListMenu", function()
                 error("filename-only mode should not batch plugin book info")
             end
             BookInfoManager.getBookInfo = function()
-                single_lookup_count = single_lookup_count + 1
+                plugin_lookup_count = plugin_lookup_count + 1
                 return nil
+            end
+            ProgressWidget.new = function(self, opts)
+                progress_widget_count = progress_widget_count + 1
+                return original_progress_new(self, opts)
+            end
+            ptutil.showProgressBar = function(...)
+                progress_layout_count = progress_layout_count + 1
+                return original_show_progress_bar(...)
             end
 
             menu:_updateItemsBuildUI()
 
             BookInfoManager.getBookInfoBatch = original_getBookInfoBatch
             BookInfoManager.getBookInfo = original_getBookInfo
+            ProgressWidget.new = original_progress_new
+            ptutil.showProgressBar = original_show_progress_bar
 
-            assert.equal(0, single_lookup_count)
+            assert.equal(0, plugin_lookup_count)
+            assert.equal(0, core_lookup_count)
+            assert.equal(0, progress_widget_count)
+            assert.equal(0, progress_layout_count)
         end)
 
         it("does not queue filename-only items for background extraction", function()

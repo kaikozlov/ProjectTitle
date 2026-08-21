@@ -1,18 +1,15 @@
 --[[
-    Phase 3: Font Sizing Optimization Tests
+    Stateless font-estimate compatibility tests
 
-    These tests verify that font sizing is more efficient than the current
-    trial-and-error approach. The goal is to reduce widget allocations
-    and iterations during the font sizing process.
+    Project: Title's production fitting path measures real KOReader widgets
+    from the nominal size downward. These tests retain the user-patch helper
+    API without claiming that mocked heuristic timings predict device speed.
 ]]
 
-local perf = require("spec.support.perf_helpers")
 local mock_ui = require("spec.support.mock_ui")
 
-describe("Font Sizing Optimization", function()
+describe("Stateless font-estimate compatibility", function()
     local ptutil
-    local widget_counter
-    local TextBoxWidget
 
     local function get_upvalue_by_name(fn, name)
         for index = 1, 20 do
@@ -31,20 +28,6 @@ describe("Font Sizing Optimization", function()
     end)
 
     before_each(function()
-        widget_counter = perf.WidgetCounter:new()
-
-        -- Create counted TextBoxWidget
-        TextBoxWidget = perf.counted_mock_widget(widget_counter, "TextBoxWidget")
-        -- Add TextBoxWidget-specific mock methods
-        TextBoxWidget.has_split_inside_word = false
-        local original_new = TextBoxWidget.new
-        TextBoxWidget.new = function(self, o)
-            local instance = original_new(self, o)
-            instance.has_split_inside_word = false
-            return instance
-        end
-
-        package.loaded["ui/widget/textboxwidget"] = TextBoxWidget
         package.loaded["ptutil"] = nil
         ptutil = require("ptutil")
     end)
@@ -136,30 +119,8 @@ describe("Font Sizing Optimization", function()
         end)
     end)
 
-    describe("Font size caching", function()
-        it("caches font size calculations", function()
-            -- First call
-            local size1 = ptutil.estimateFontSize({
-                text = "Cached Title",
-                width = 200,
-                height = 100,
-                min_size = 10,
-                max_size = 26,
-            })
-
-            -- Second call with same params should use cache
-            local size2 = ptutil.estimateFontSize({
-                text = "Cached Title",
-                width = 200,
-                height = 100,
-                min_size = 10,
-                max_size = 26,
-            })
-
-            assert.equal(size1, size2)
-        end)
-
-        it("does not reuse cached estimates for same-length text with different newline counts", function()
+    describe("Stateless font size estimation", function()
+        it("handles same-length text with different newline counts independently", function()
             local single_line = ptutil.estimateFontSize({
                 text = "abcdefghi",
                 width = 90,
@@ -179,116 +140,17 @@ describe("Font Sizing Optimization", function()
             assert.not_equal(single_line, multiline)
         end)
 
-        it("provides clearFontSizeCache function", function()
+        it("keeps clearFontSizeCache as a compatibility no-op", function()
             assert.is_function(ptutil.clearFontSizeCache,
                 "ptutil should have a clearFontSizeCache function")
+            assert.has_no.errors(function()
+                ptutil.clearFontSizeCache()
+            end)
         end)
 
-        it("tracks distinct cached entries without recounting repeated hits", function()
-            ptutil.estimateFontSize({
-                text = "Cached Title",
-                width = 200,
-                height = 100,
-                min_size = 10,
-                max_size = 26,
-            })
-            ptutil.estimateFontSize({
-                text = "Cached Title",
-                width = 200,
-                height = 100,
-                min_size = 10,
-                max_size = 26,
-            })
-            ptutil.estimateFontSize({
-                text = "Another Title",
-                width = 200,
-                height = 100,
-                min_size = 10,
-                max_size = 26,
-            })
-
+        it("does not retain title-specific cache state", function()
             local cache_count = get_upvalue_by_name(ptutil.clearFontSizeCache, "font_size_cache_count")
-            assert.is_not_nil(cache_count)
-            assert.equal(2, cache_count)
-        end)
-
-        it("resets cache bookkeeping when cleared", function()
-            ptutil.estimateFontSize({
-                text = "Cached Title",
-                width = 200,
-                height = 100,
-                min_size = 10,
-                max_size = 26,
-            })
-            ptutil.estimateFontSize({
-                text = "Another Title",
-                width = 200,
-                height = 100,
-                min_size = 10,
-                max_size = 26,
-            })
-
-            ptutil.clearFontSizeCache()
-
-            local cache_count = get_upvalue_by_name(ptutil.clearFontSizeCache, "font_size_cache_count")
-            assert.is_not_nil(cache_count)
-            assert.equal(0, cache_count)
-        end)
-
-        it("resets bookkeeping to the new entry after the cache reaches capacity", function()
-            for index = 1, 201 do
-                ptutil.estimateFontSize({
-                    text = "Title " .. index,
-                    width = 200,
-                    height = 100,
-                    min_size = 10,
-                    max_size = 26,
-                })
-            end
-
-            local cache_count = get_upvalue_by_name(ptutil.clearFontSizeCache, "font_size_cache_count")
-            assert.is_not_nil(cache_count)
-            assert.equal(1, cache_count)
-        end)
-    end)
-
-    describe("Reduced widget allocations", function()
-        it("FakeCover creates fewer TextBoxWidgets with optimization", function()
-            -- This test documents the expected reduction in widget allocations
-            -- Currently, FakeCover may create 16+ TextBoxWidgets per cover
-            -- After optimization, it should create fewer
-
-            -- Reset counter
-            widget_counter:reset()
-
-            -- Simulate what FakeCover does (simplified)
-            -- With optimization, we should estimate font size first,
-            -- then create widgets only once
-
-            local estimated_size = ptutil.estimateFontSize({
-                text = "Test Title",
-                width = 180,
-                height = 200,
-                min_size = 10,
-                max_size = 26,
-            })
-
-            -- Create widgets just once with estimated size
-            TextBoxWidget:new({
-                text = "Test Title",
-                width = 180,
-            })
-            TextBoxWidget:new({
-                text = "Test Author",
-                width = 180,
-            })
-
-            local count = widget_counter:get_count("TextBoxWidget")
-
-            -- With optimization, should be exactly 2 widgets (title + author)
-            -- Without optimization, could be 10-30+ (multiple iterations)
-            perf.assert.calls_at_most(count, 4,
-                "Should create minimal TextBoxWidgets with font size estimation")
+            assert.is_nil(cache_count)
         end)
     end)
 

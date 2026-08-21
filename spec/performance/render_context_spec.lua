@@ -127,6 +127,17 @@ describe("Render Context Optimization", function()
             package.loaded["bookinfomanager"] = {
                 _settings = mock_bookinfo_settings,
                 getBookInfo = function() return nil end,
+                BATCH_MISS = { _batch_miss = true },
+                isBatchMiss = function(_, value)
+                    return value and value._batch_miss == true
+                end,
+                getBookInfoBatch = function(self, filepaths)
+                    local results = {}
+                    for _, filepath in ipairs(filepaths) do
+                        results[filepath] = self.BATCH_MISS
+                    end
+                    return results
+                end,
                 getSetting = function(_, key)
                     getsetting_during_render = getsetting_during_render + 1
                     return mock_bookinfo_settings[key]
@@ -213,6 +224,17 @@ describe("Render Context Optimization", function()
             package.loaded["bookinfomanager"] = {
                 _settings = mock_bookinfo_settings,
                 getBookInfo = function() return nil end,
+                BATCH_MISS = { _batch_miss = true },
+                isBatchMiss = function(_, value)
+                    return value and value._batch_miss == true
+                end,
+                getBookInfoBatch = function(self, filepaths)
+                    local results = {}
+                    for _, filepath in ipairs(filepaths) do
+                        results[filepath] = self.BATCH_MISS
+                    end
+                    return results
+                end,
                 getSetting = function(_, key)
                     getsetting_during_render = getsetting_during_render + 1
                     return mock_bookinfo_settings[key]
@@ -288,6 +310,13 @@ describe("Render Context Optimization", function()
         it("showProgressBar accepts render_context parameter", function()
             package.loaded["ptutil"] = nil
             local ptutil = require("ptutil")
+            local BookInfoManager = package.loaded["bookinfomanager"]
+            local original_get_setting = BookInfoManager.getSetting
+            local get_setting_calls = 0
+            BookInfoManager.getSetting = function()
+                get_setting_calls = get_setting_calls + 1
+                return nil
+            end
 
             -- The function should accept an optional render_context
             -- and use it instead of calling getSetting
@@ -301,8 +330,33 @@ describe("Render Context Optimization", function()
             -- After optimization, this should work without getSetting calls
             local pages, show_bar = ptutil.showProgressBar(100, context)
 
+            BookInfoManager.getSetting = original_get_setting
+
             assert.is_number(pages)
             assert.is_boolean(show_bar)
+            assert.equal(0, get_setting_calls)
+        end)
+
+        it("formatProgressText does not fall back to settings when a render context exists", function()
+            package.loaded["ptutil"] = nil
+            local ptutil = require("ptutil")
+            local BookInfoManager = package.loaded["bookinfomanager"]
+            local original_get_setting = BookInfoManager.getSetting
+            local get_setting_calls = 0
+            BookInfoManager.getSetting = function()
+                get_setting_calls = get_setting_calls + 1
+                return nil
+            end
+
+            ptutil.formatProgressText("reading", {}, 100, true, 0.5, {
+                reading = "Reading",
+                finished = "Finished",
+                abandoned = "Abandoned",
+                unread = "Unread",
+            }, {})
+
+            BookInfoManager.getSetting = original_get_setting
+            assert.equal(0, get_setting_calls)
         end)
 
         it("onFocus uses render_context instead of getSetting", function()
