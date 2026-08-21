@@ -1341,11 +1341,8 @@ function MosaicMenu:_recalculateDimen()
     end
 
     self.item_margin = Screen:scaleBySize(margin_size)
-    -- in meta mode, an extra line and margins are drawn between bottom row and footer to indicate read status
-    local additional_padding = 0
-    if self.meta_show_opened ~= nil then additional_padding = 1 end
-    self.others_height = self.others_height + ((self.nb_rows + additional_padding) * Size.line.thin) -- lines between rows
-    self.others_height = self.others_height + ((self.nb_rows + additional_padding) * self.item_margin) -- margins between rows
+    self.others_height = self.others_height + (self.nb_rows * Size.line.thin) -- lines between rows
+    self.others_height = self.others_height + (self.nb_rows * self.item_margin) -- margins between rows
 
     -- Set our items target size
     self.item_height = math.floor(
@@ -1482,7 +1479,6 @@ function MosaicMenu:_updateItemsBuildUI()
     local last_index  = idx_offset + items_on_current_page
     local line_layout = {}
     local select_number
-    if self.recent_boundary_index == nil then self.recent_boundary_index = 0 end
 
     -- Batch pre-fetch bookinfo for all items on this page to reduce DB queries
     local filepaths = {}
@@ -1538,44 +1534,13 @@ function MosaicMenu:_updateItemsBuildUI()
         table.insert(cur_row, item_tmp)
         table.insert(cur_row, ptutil.acquirePooledWidget(self, "HorizontalSpan", { width = self.item_margin }))
 
-        -- Recent items that are sorted to top of the library are underlined in black (using the row separator line)
-        -- If the current row ends before the boundary → full black line. If boundary falls within the current
-        -- row → gray baseline + black overlay over recent columns, otherwise → thin gray.
-        -- Special case: last line gets a white (invisible) line instead of gray. Logic for black lines is unchanged.
         if idx % self.nb_cols == 1 then -- new row
-            local row_start = index
             local row_end   = math.min(index + (self.nb_cols - 1), last_index)
             local is_last_row = (row_end == last_index)
-            local draw_line = ((not is_last_row) or (is_last_row and self.meta_show_opened ~= nil))
-            if draw_line then
+            if not is_last_row then
                 table.insert(self.item_group, ptutil.acquirePooledWidget(self, "VerticalSpan",
                     { width = Screen:scaleBySize(half_margin_size) }))
-            end
-            local baseline = is_last_row and ptutil.thinWhiteLine or ptutil.thinGrayLine
-            if self.recent_boundary_index > 0 then
-                if row_end <= self.recent_boundary_index then
-                    table.insert(self.item_group, ptutil.thinBlackLine(line_width))
-                elseif row_start <= self.recent_boundary_index and row_end >= self.recent_boundary_index then
-                    local pad = Screen:scaleBySize(10)
-                    local inner_total = math.max(0, line_width - 2 * pad)
-                    local dark_cols = math.max(0, math.min(self.nb_cols, self.recent_boundary_index - row_start + 1))
-                    local dark_inner = math.floor(inner_total * (dark_cols / self.nb_cols))
-
-                    table.insert(self.item_group, OverlapGroup:new {
-                        dimen = Geom:new { w = line_width, h = Size.line.thin },
-                        baseline(line_width),
-                        LeftContainer:new {
-                            dimen = Geom:new { w = (2 * pad) + dark_inner, h = Size.line.thin },
-                            ptutil.thinBlackLine((2 * pad) + dark_inner),
-                        },
-                    })
-                else
-                    if draw_line then table.insert(self.item_group, baseline(line_width)) end
-                end
-            else
-                if draw_line then table.insert(self.item_group, baseline(line_width)) end
-            end
-            if draw_line then
+                table.insert(self.item_group, ptutil.thinGrayLine(line_width))
                 table.insert(self.item_group, ptutil.acquirePooledWidget(self, "VerticalSpan",
                     { width = Screen:scaleBySize(half_margin_size) }))
             end
@@ -1589,10 +1554,8 @@ function MosaicMenu:_updateItemsBuildUI()
         itm_timer:report("Draw grid item " .. getMenuText(entry))
     end
     self._bookinfo_batch = nil
-    if self.meta_show_opened == nil then
-        table.insert(self.item_group, ptutil.acquirePooledWidget(self, "VerticalSpan",
-            { width = Screen:scaleBySize(half_margin_size) }))
-    end
+    table.insert(self.item_group, ptutil.acquirePooledWidget(self, "VerticalSpan",
+        { width = Screen:scaleBySize(half_margin_size) }))
     table.insert(self.layout, line_layout)
     grid_timer:report("Draw cover grid page " .. self.perpage)
     return select_number

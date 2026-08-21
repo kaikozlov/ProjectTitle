@@ -12,6 +12,20 @@ describe("BookInfoManager", function()
         -- Mock dependencies
         package.loaded["ui/bidi"] = {}
         package.loaded["ffi/blitbuffer"] = {}
+        package.loaded["ffi/archiver"] = {
+            Reader = {
+                new = function()
+                    return {
+                        open = function() return false end,
+                        iterate = function()
+                            return function() return nil end
+                        end,
+                        extractToMemory = function() return nil end,
+                        close = function() end,
+                    }
+                end,
+            },
+        }
         package.loaded["datastorage"] = {
             getSettingsDir = function() return "/tmp" end,
             getDataDir = function() return "/tmp" end
@@ -186,17 +200,9 @@ describe("BookInfoManager", function()
         
         package.loaded["ptdbg"] = {}
         package.loaded["ptutil"] = {
-            LRUCache = {
-                new = function(_, max_size)
-                    local store = {}
-                    return {
-                        get = function(_, key) return store[key] end,
-                        put = function(_, key, value) store[key] = value end,
-                        clear = function() store = {} end,
-                        invalidate = function(_, key) store[key] = nil end,
-                    }
-                end
-            },
+            escapeLikePattern = function(value)
+                return tostring(value):gsub("\\", "\\\\"):gsub("%%", "\\%%"):gsub("_", "\\_")
+            end,
             clearFolderCoverCache = function()
                 folder_cache_clear_count = folder_cache_clear_count + 1
             end,
@@ -414,80 +420,6 @@ describe("BookInfoManager", function()
             assert.is_true(subtree_select_found)
         end)
 
-        it("queries library entries through the shared db connection with escaped LIKE wildcards", function()
-            local prepared_sql
-            local bound_values
-            mock_conn.prepare = function(self, sql)
-                prepared_sql = sql
-                return {
-                    bind = function(self, ...)
-                        bound_values = { ... }
-                        return self
-                    end,
-                    step = function()
-                        return nil
-                    end,
-                    reset = function() end,
-                    finalize = function() end,
-                    clearbind = function()
-                        return {
-                            reset = function() end,
-                        }
-                    end,
-                }
-            end
-
-            BookInfoManager.db_conn = nil
-            BookInfoManager.db_created = true
-
-            local result = BookInfoManager:getLibraryEntries("/books/100%_semi;quote'")
-
-            assert.is_table(result)
-            assert.equal(mock_conn, BookInfoManager.db_conn)
-            assert.match("LIKE %?", prepared_sql)
-            assert.match("ESCAPE", prepared_sql)
-            assert.is_nil(prepared_sql:match("ORDER BY%s+authors"))
-            assert.equal("/books/100\\%\\_semi;quote'/%", bound_values[1])
-        end)
-
-        it("sorts library entries in Lua using authors, series, series index, then title", function()
-            mock_conn.prepare = function(self, sql)
-                local rows = {
-                    { "/books/library/", "gamma.epub", "Zed", "Series B", 2, "Gamma" },
-                    { "/books/library/", "beta.epub", "Alpha", "Series A", 2, "Beta" },
-                    { "/books/library/", "alpha.epub", "Alpha", "Series A", 1, "Alpha" },
-                }
-                local index = 0
-                return {
-                    bind = function(self, ...)
-                        return self
-                    end,
-                    step = function(self)
-                        index = index + 1
-                        return rows[index]
-                    end,
-                    reset = function() end,
-                    finalize = function() end,
-                    clearbind = function()
-                        return {
-                            reset = function() end,
-                        }
-                    end,
-                }
-            end
-
-            BookInfoManager.db_conn = nil
-            BookInfoManager.db_created = true
-
-            local result = BookInfoManager:getLibraryEntries("/books/library")
-
-            assert.same({
-                { directory = "/books/library/", filename = "alpha.epub" },
-                { directory = "/books/library/", filename = "beta.epub" },
-                { directory = "/books/library/", filename = "gamma.epub" },
-            }, result)
-        end)
-
         it("returns the final four deterministic folder-cover candidates across the full subtree", function()
             local bound_values
             local rows = {}
@@ -591,21 +523,6 @@ describe("BookInfoManager", function()
             }, result)
             assert.equal(64, file_exists_calls)
             assert.equal(64, step_calls)
-        end)
-    end)
-
-    describe("Library revision", function()
-        it("bumps the library revision when book rows are updated or deleted", function()
-            local initial_revision = BookInfoManager:getLibraryRevision()
-
-            BookInfoManager:setBookInfoProperties("/books/update.epub", { ignore_cover = "Y" })
-            local after_update = BookInfoManager:getLibraryRevision()
-
-            BookInfoManager:deleteBookInfo("/books/update.epub")
-            local after_delete = BookInfoManager:getLibraryRevision()
-
-            assert.is_true(after_update > initial_revision)
-            assert.is_true(after_delete > after_update)
         end)
     end)
 

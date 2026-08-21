@@ -454,7 +454,6 @@ function ListMenuItem:update()
                 unread = _("New"),
             }
             local pages_str = ""
-            local pages_left_str = ""
             local percent_str = ""
             local progress_str = ""
 
@@ -627,7 +626,7 @@ function ListMenuItem:update()
 
             -- show progress text, page text, and/or file info text
             if render_context.hide_file_info then
-                progress_str, percent_str, pages_str, pages_left_str = ptutil.formatProgressText(status, bookinfo, pages,
+                progress_str, percent_str, pages_str = ptutil.formatProgressText(status, bookinfo, pages,
                     draw_progressbar, percent_finished, progress_strings, render_context)
 
                 -- Get progress text format preference
@@ -1386,7 +1385,6 @@ function ListMenu:_updateItemsBuildUI()
     table.insert(self.item_group, ptutil.mediumBlackLine(line_width))
     local idx_offset = (self.page - 1) * self.perpage
     local select_number
-    if self.recent_boundary_index == nil then self.recent_boundary_index = 0 end
 
     -- Batch pre-fetch bookinfo for all items on this page to reduce DB queries
     local filepaths = {}
@@ -1414,19 +1412,13 @@ function ListMenu:_updateItemsBuildUI()
         if index == self.itemnumber then -- focused item
             select_number = idx
         end
-        local is_boundary_crossed = true
         if idx > 1 then
             -- add focus indicator padding only for devices that need it
             if not self.render_context.is_touch_device or self.render_context.force_focus_indicator then
                 table.insert(self.item_group, ptutil.acquirePooledWidget(self, "VerticalSpan",
                     { width = Screen:scaleBySize(3) }))
             end
-            is_boundary_crossed = (index - 1 >= self.recent_boundary_index + 1)
-            if is_boundary_crossed then
-                table.insert(self.item_group, ptutil.thinGrayLine(line_width))
-            else
-                table.insert(self.item_group, ptutil.thinBlackLine(line_width))
-            end
+            table.insert(self.item_group, ptutil.thinGrayLine(line_width))
         end
         local item_tmp = ListMenuItem:new {
             height = self.item_height,

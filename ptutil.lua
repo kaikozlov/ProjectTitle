@@ -673,12 +673,6 @@ function ptutil.getFolderCover(filepath, max_img_w, max_img_h, pt_cover_path)
     end
 end
 
-function ptutil.make_sql_safe(string)
-    string = string:gsub("'", "''") -- use '' inside '
-    string = string:gsub(";","_")   -- ljsqlite3 splits commands on semicolons
-    return string
-end
-
 function ptutil.query_cover_paths(folder, include_subfolders)
     return BookInfoManager:getFolderCoverCandidateFilepaths(folder, include_subfolders)
 end
@@ -1116,145 +1110,6 @@ function ptutil.formatTags(keywords, tags_limit)
         formatted_tags = formatted_tags .. "…"
     end
     return formatted_tags
-end
-
-function ptutil.formatProgressText(status, bookinfo, pages, draw_progressbar, percent_finished, progress_strings)
-    local pages_str = ""
-    local pages_left_str = ""
-    local percent_str = ""
-    local progress_str = ""
-
-    if status == "complete" then
-        progress_str = progress_strings.finished
-    elseif status == "abandoned" then
-        progress_str = progress_strings.abandoned
-    elseif percent_finished then
-        progress_str = progress_strings.reading
-        if not draw_progressbar then
-            percent_str = math.floor(100 * percent_finished) .. "%"
-        end
-        if pages then
-            if BookInfoManager:getSetting("show_pages_read_as_progress") then
-                percent_str = progress_strings.reading
-                pages_str = T(_("Page %1 of %2"), Math.round(percent_finished * pages), pages)
-            end
-            if BookInfoManager:getSetting("show_pages_left_in_progress") then
-                percent_str = progress_strings.reading
-                pages_left_str = T(_("%1 pages left"), Math.round(pages - percent_finished * pages), pages)
-            end
-        end
-    elseif not bookinfo._no_provider then
-        progress_str = progress_strings.unread
-    end
-
-    return progress_str, percent_str, pages_str, pages_left_str
-end
-
-function ptutil.formatFooterText(footer_config, _manager, path, fm_default_dir, has_shortcut, flat_view)
-    if BookInfoManager:getSetting("replace_footer_text") then
-        local config = footer_config or {
-            order = {
-                "clock",
-                "wifi",
-                "battery",
-                "frontlight",
-                "frontlight_warmth",
-            },
-            wifi_show_disabled = true,
-            frontlight_show_off = true,
-        }
-        local genItemText = {
-            battery = function()
-                if Device:hasBattery() then
-                    local powerd = Device:getPowerDevice()
-                    local batt_lvl = powerd:getCapacity()
-                    local batt_symbol = powerd:getBatterySymbol(powerd:isCharged(), powerd:isCharging(), batt_lvl)
-                    local text = BD.wrap(batt_symbol) .. BD.wrap(batt_lvl .. "%")
-                    if Device:hasAuxBattery() and powerd:isAuxBatteryConnected() then
-                        local aux_batt_lvl = powerd:getAuxCapacity()
-                        local aux_batt_symbol =
-                            powerd:getBatterySymbol(powerd:isAuxCharged(), powerd:isAuxCharging(), aux_batt_lvl)
-                        text = text ..
-                            " " .. BD.wrap("+") .. BD.wrap(aux_batt_symbol) .. BD.wrap(aux_batt_lvl .. "%")
-                    end
-                    return text
-                end
-            end,
-            clock = function()
-                local datetime = require("datetime")
-                return datetime.secondsToHour(os.time(), G_reader_settings:isTrue("twelve_hour_clock"))
-            end,
-            frontlight = function()
-                if Device:hasFrontlight() then
-                    local prefix = "✺" -- "☼"
-                    local powerd = Device:getPowerDevice()
-                    if powerd:isFrontlightOn() then
-                        if Device:isCervantes() or Device:isKobo() then
-                            return (prefix .. "%d%%"):format(powerd:frontlightIntensity())
-                        else
-                            return (prefix .. "%d"):format(powerd:frontlightIntensity())
-                        end
-                    else
-                        return config.frontlight_show_off and T(_("%1Off"), prefix)
-                    end
-                end
-            end,
-            frontlight_warmth = function()
-                if Device:hasNaturalLight() then
-                    local prefix = "⊛" -- "💡"
-                    local powerd = Device:getPowerDevice()
-                    if powerd:isFrontlightOn() then
-                        local warmth = powerd:frontlightWarmth()
-                        if warmth then return (prefix .. "%d%%"):format(warmth) end
-                    else
-                        return config.frontlight_show_off and T(_("%1Off"), prefix)
-                    end
-                end
-            end,
-            wifi = function()
-                local NetworkMgr = require("ui/network/manager")
-                return NetworkMgr:isWifiOn() and "" or (config.wifi_show_disabled and "")
-            end,
-        }
-        local device_statuses = {}
-        local alt_footer = nil
-        for _, item in ipairs(config.order) do
-            local text = genItemText[item]()
-            if text then table.insert(device_statuses, text) end
-        end
-        if #device_statuses > 0 then alt_footer = table.concat(device_statuses, ptutil.separator.dot) end
-        if _manager and type(_manager.name) == "string" then
-            return ""
-        else
-            return alt_footer
-        end
-    else
-        local display_path = ""
-        if (path == fm_default_dir or
-                            path == G_reader_settings:readSetting("home_dir")) and
-                            G_reader_settings:nilOrTrue("shorten_home_dir") then
-            display_path = _("Home")
-        elseif _manager and type(_manager.name) == "string" then
-            display_path = ""
-        else
-            -- show only the current folder name, not the whole path
-            local folder_name = "/"
-            local crumbs = {}
-            for crumb in string.gmatch(path, "[^/]+") do
-                table.insert(crumbs, crumb)
-            end
-            if #crumbs > 1 then
-                folder_name = table.concat(crumbs, "", #crumbs, #crumbs)
-            end
-            -- add a star if folder is in shortcuts
-            if has_shortcut then
-                folder_name = "★ " .. folder_name
-            end
-            display_path = folder_name
-        end
-        if flat_view == true then display_path = _("Library") end
-        return display_path
-    end
 end
 
 function ptutil.getPageCount(fullpath)
@@ -1739,157 +1594,13 @@ function ptutil.releasePooledWidgets(menu)
     menu._pooled_widgets_in_use = {}
 end
 
--- O(1) LRU Cache Implementation
--- Uses a doubly-linked list + hash map for O(1) get, put, and eviction
-local LRUCache = {}
-LRUCache.__index = LRUCache
-
--- Create a new LRU cache
--- @param max_size Maximum number of entries before eviction
-function LRUCache:new(max_size)
-    local cache = {
-        max_size = max_size or 25,
-        map = {},        -- key -> node
-        head = nil,      -- Most recently used
-        tail = nil,      -- Least recently used
-        current_size = 0,
-    }
-    setmetatable(cache, LRUCache)
-    return cache
-end
-
--- Internal: Create a new node
-local function create_node(key, value)
-    return {
-        key = key,
-        value = value,
-        prev = nil,
-        next = nil,
-    }
-end
-
--- Internal: Remove a node from the linked list
-function LRUCache:_remove_node(node)
-    if node.prev then
-        node.prev.next = node.next
-    else
-        self.head = node.next
-    end
-
-    if node.next then
-        node.next.prev = node.prev
-    else
-        self.tail = node.prev
-    end
-
-    node.prev = nil
-    node.next = nil
-end
-
--- Internal: Add node to head (most recent)
-function LRUCache:_add_to_head(node)
-    node.next = self.head
-    node.prev = nil
-
-    if self.head then
-        self.head.prev = node
-    end
-
-    self.head = node
-
-    if not self.tail then
-        self.tail = node
-    end
-end
-
--- Internal: Move node to head (mark as most recently used)
-function LRUCache:_move_to_head(node)
-    self:_remove_node(node)
-    self:_add_to_head(node)
-end
-
--- Get a value from the cache
--- @param key The key to look up
--- @return The cached value, or nil if not found
-function LRUCache:get(key)
-    local node = self.map[key]
-    if not node then
-        return nil
-    end
-
-    -- Move to head (most recently used)
-    self:_move_to_head(node)
-
-    return node.value
-end
-
--- Put a value in the cache
--- @param key The key to store
--- @param value The value to store
-function LRUCache:put(key, value)
-    local node = self.map[key]
-
-    if node then
-        -- Update existing entry
-        node.value = value
-        self:_move_to_head(node)
-    else
-        -- Create new entry
-        node = create_node(key, value)
-        self.map[key] = node
-        self:_add_to_head(node)
-        self.current_size = self.current_size + 1
-
-        -- Evict if over capacity
-        if self.current_size > self.max_size then
-            local evicted = self.tail
-            if evicted then
-                self:_remove_node(evicted)
-                self.map[evicted.key] = nil
-                self.current_size = self.current_size - 1
-            end
-        end
-    end
-end
-
--- Invalidate (remove) a specific key
--- @param key The key to remove
-function LRUCache:invalidate(key)
-    local node = self.map[key]
-    if node then
-        self:_remove_node(node)
-        self.map[key] = nil
-        self.current_size = self.current_size - 1
-    end
-end
-
--- Clear all entries
-function LRUCache:clear()
-    self.map = {}
-    self.head = nil
-    self.tail = nil
-    self.current_size = 0
-end
-
--- Get current cache size
-function LRUCache:size()
-    return self.current_size
-end
-
--- Export LRUCache
-ptutil.LRUCache = LRUCache
-
 function ptutil.formatProgressText(status, bookinfo, pages, draw_progressbar, percent_finished, progress_strings, render_context)
     local pages_str = ""
-    local pages_left_str = ""
     local percent_str = ""
     local progress_str = ""
     local show_pages_read = (render_context and render_context.show_pages_read_as_progress ~= nil)
         and render_context.show_pages_read_as_progress
         or BookInfoManager:getSetting("show_pages_read_as_progress")
-    local show_pages_left = (render_context and render_context.show_pages_left_in_progress ~= nil)
-        and render_context.show_pages_left_in_progress
-        or BookInfoManager:getSetting("show_pages_left_in_progress")
 
     if status == "complete" then
         progress_str = progress_strings.finished
@@ -1905,19 +1616,15 @@ function ptutil.formatProgressText(status, bookinfo, pages, draw_progressbar, pe
                 percent_str = progress_strings.reading
                 pages_str = T(_("Page %1 of %2"), Math.round(percent_finished * pages), pages)
             end
-            if show_pages_left then
-                percent_str = progress_strings.reading
-                pages_left_str = T(_("%1 pages left"), Math.round(pages - percent_finished * pages), pages)
-            end
         end
     elseif not bookinfo._no_provider then
         progress_str = progress_strings.unread
     end
 
-    return progress_str, percent_str, pages_str, pages_left_str
+    return progress_str, percent_str, pages_str
 end
 
-function ptutil.formatFooterText(footer_config, _manager, path, fm_default_dir, has_shortcut, meta_browse_mode)
+function ptutil.formatFooterText(footer_config, _manager, path, fm_default_dir, has_shortcut, flat_view)
     if BookInfoManager:getSetting("replace_footer_text") then
         local config = footer_config or {
             order = {
@@ -2037,7 +1744,7 @@ function ptutil.formatFooterText(footer_config, _manager, path, fm_default_dir, 
             end
             display_path = folder_name
         end
-        if meta_browse_mode == true then display_path = _("Library") end
+        if flat_view == true then display_path = _("Library") end
         return display_path
     end
 end

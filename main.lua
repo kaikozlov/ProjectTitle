@@ -241,7 +241,6 @@ local function runSettingsMigrations()
         logger.info(ptdbg.logprefix, "Migrating settings to version 2")
         BookInfoManager:saveSetting("disable_auto_foldercovers", false)
         BookInfoManager:saveSetting("force_max_progressbars", false)
-        BookInfoManager:saveSetting("opened_at_top_of_library", true)
         BookInfoManager:saveSetting("reverse_footer", false)
         BookInfoManager:saveSetting("use_custom_bookstatus", true)
         BookInfoManager:saveSetting("replace_footer_text", false)
@@ -315,6 +314,12 @@ local function runSettingsMigrations()
         BookInfoManager:saveSetting("footer_show_frontlight_warmth", true)
         BookInfoManager:saveSetting("config_version", "11")
     end
+    if BookInfoManager:getSetting("config_version") == 11 then
+        logger.info(ptdbg.logprefix, "Migrating settings to version 12")
+        -- Version 12 retires the plugin's old Library mode in favor of
+        -- KOReader's native flat view; no replacement setting is required.
+        BookInfoManager:saveSetting("config_version", "12")
+    end
 
     return restart_needed
 end
@@ -375,8 +380,44 @@ function ProjectTitle:init()
     BookInfoManager:closeDbConnection() -- will be re-opened if needed
 end
 
+local function restoreRuntimeOverrides(self)
+    if self._pt_runtime_restored then
+        return
+    end
+
+    local fc = self.ui and self.ui.file_chooser
+    local CoverMenu = require("covermenu")
+
+    for _, widget_id in ipairs({ "history", "collections", "filesearcher" }) do
+        ProjectTitle.removeFileDialogButtons(widget_id)
+        local widget = _modified_widgets[widget_id]
+        widget.updateItemTable = _updateItemTable_orig_funcs[widget_id]
+        widget._pt_widget_display_mode = nil
+    end
+    ProjectTitle.removeFileDialogButtons("filemanager")
+    PathChooser.init = _PathChooser_init_orig
+    FileManager.setupLayout = _FileManager_setupLayout_orig
+
+    if self.ui then
+        self.ui._pt_filechooser_display_mode = nil
+    end
+    if fc and fc.updateItems == CoverMenu.updateItems then
+        CoverMenu.configureFileChooser(fc, nil)
+    end
+    if fc then
+        fc:_recalculateDimen()
+        fc:switchItemTable(nil, nil, fc.prev_itemnumber, { dummy = "" }) -- dummy itemmatch to draw focus
+    end
+    self._pt_runtime_restored = true
+end
+
 function ProjectTitle:stopPlugin()
     logger.info(ptdbg.logprefix, "Disabling plugin per user request")
+    restoreRuntimeOverrides(self)
+    if self.ui then
+        self.ui.coverbrowser = nil
+        self.ui.projecttitle = nil
+    end
 end
 
 function ProjectTitle:deletePluginSettings()
@@ -385,14 +426,10 @@ function ProjectTitle:deletePluginSettings()
     -- tear down PT and restore stock filemanager view
     local DataStorage = require("datastorage")
     local settings_dir = DataStorage:getSettingsDir()
-    local fc = self.ui.file_chooser
-    ProjectTitle.removeFileDialogButtons("filesearcher")
-    _modified_widgets["filesearcher"].updateItemTable = _updateItemTable_orig_funcs["filesearcher"]
+    restoreRuntimeOverrides(self)
     FileChooser.updateItems = _FileChooser_updateItems_orig
     FileChooser.onCloseWidget = _FileChooser_onCloseWidget_orig
     FileChooser._recalculateDimen = _FileChooser__recalculateDimen_orig
-    ProjectTitle.removeFileDialogButtons("filemanager")
-    FileManager.setupLayout = _FileManager_setupLayout_orig
     Menu.init = _Menu_init_orig
     Menu.updatePageInfo = _Menu_updatePageInfo_orig
     FileChooser._updateItemsBuildUI = nil
@@ -400,10 +437,6 @@ function ProjectTitle:deletePluginSettings()
     FileChooser._do_filename_only = nil
     FileChooser._do_hint_opened = nil
     FileChooser._do_center_partial_rows = nil
-    if fc then
-        fc:_recalculateDimen()
-        fc:switchItemTable(nil, nil, fc.prev_itemnumber, { dummy = "" }) -- dummy itemmatch to draw focus
-    end
     BookInfoManager:closeDbConnection()
 
     -- delete settings

@@ -299,9 +299,6 @@ function CoverMenu:updateItems(select_number, no_recalculate_dimen)
     self._has_cover_images = false
     select_number = self:_updateItemsBuildUI() or select_number
 
-    -- test to see what style to draw (pathchooser vs one of our fancy modes)
-    is_pathchooser = ptutil.isPathChooser(self)
-
     -- Set the local variables with the things we know
     -- These are used only by extractBooksInDirectory(), which should
     -- use the cover_specs set for FileBrowser, and not those from History.
@@ -471,15 +468,7 @@ function CoverMenu:genItemTable(dirs, files, path)
     local is_pathchooser = ptutil.isPathChooser(self)
     self._pt_pathchooser = is_pathchooser
     local item_table = CoverMenu._FileChooser_genItemTable_orig(self, dirs, files, path) or {}
-    if not is_pathchooser then
-        local filtered = {}
-        for _, item in ipairs(item_table) do
-            if not item.is_go_up then
-                filtered[#filtered + 1] = item
-            end
-        end
-        item_table = filtered
-    elseif path ~= "/"
+    if is_pathchooser and path ~= "/"
         and G_reader_settings:isTrue("lock_home_folder")
         and path == G_reader_settings:readSetting("home_dir") then
         table.insert(item_table, 1, {

@@ -68,16 +68,16 @@ describe("ptutil Formatting Functions", function()
             assert.match("The Great Series", result)
         end)
 
-        it("formats series with zero index returns empty", function()
+        it("formats series with zero index", function()
             local result = ptutil.formatSeries("Prequel Series", 0)
-            assert.equal("", result)
+            assert.match("#0", result)
+            assert.match("Prequel Series", result)
         end)
 
-        it("handles series with colon subseries extraction", function()
+        it("preserves the full colon-delimited series string", function()
             local result = ptutil.formatSeries("Big Series: Small Subseries", 1)
-            -- Should extract "Small Subseries" after the colon
+            assert.match("Big Series:", result)
             assert.match("Small Subseries", result)
-            assert.not_match("Big Series:", result)
         end)
     end)
 
@@ -288,6 +288,20 @@ describe("ptutil Formatting Functions", function()
             local result = ptutil.formatFooterText(nil, nil, "/mnt/us/books", "/mnt/us", false, false)
 
             assert.equal("Home", result)
+        end)
+
+        it("labels KOReader's native flat view as Library", function()
+            BookInfoManager:saveSetting("replace_footer_text", false)
+            G_reader_settings.readSetting = function()
+                return nil
+            end
+            G_reader_settings.nilOrTrue = function()
+                return false
+            end
+
+            local result = ptutil.formatFooterText(nil, nil, "/mnt/us/books", "/mnt/us", false, true)
+
+            assert.equal("Library", result)
         end)
 
         it("does not show Home for the default directory when a custom home is configured", function()

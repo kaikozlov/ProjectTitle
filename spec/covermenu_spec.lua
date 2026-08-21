@@ -205,7 +205,7 @@ describe("CoverMenu", function()
             assert.equal(0, #result)
         end)
 
-        it("removes .. entry from file browser", function()
+        it("preserves FileChooser's parent-folder row", function()
             local menu = {
                 file_chooser = { path = "/test" }
             }
@@ -222,12 +222,13 @@ describe("CoverMenu", function()
             local result = menu:genItemTable({}, {}, "/test")
 
             assert.is_not_nil(result)
-            assert.equal(2, #result)
-            assert.equal("file1.epub", result[1].text)
-            assert.equal("file2.epub", result[2].text)
+            assert.equal(3, #result)
+            assert.is_true(result[1].is_go_up)
+            assert.equal("file1.epub", result[2].text)
+            assert.equal("file2.epub", result[3].text)
         end)
 
-        it("removes go-up entries from file browser even when they are not the first row", function()
+        it("does not reorder FileChooser's parent-folder row", function()
             local menu = {
                 file_chooser = { path = "/test" }
             }
@@ -244,11 +245,12 @@ describe("CoverMenu", function()
             local result = menu:genItemTable({}, {}, "/test")
 
             assert.is_not_nil(result)
-            assert.equal(2, #result)
+            assert.equal(3, #result)
             assert.equal("Current folder helper", result[1].text)
-            assert.equal("file1.epub", result[2].text)
+            assert.is_true(result[2].is_go_up)
+            assert.equal("file1.epub", result[3].text)
             assert.is_nil(result[1].is_go_up)
-            assert.is_nil(result[2].is_go_up)
+            assert.is_nil(result[3].is_go_up)
         end)
 
         it("keeps .. entry for PathChooser", function()
@@ -318,148 +320,6 @@ describe("CoverMenu", function()
             assert.is_not_nil(result)
         end)
 
-        it("uses a prepared metabrowse query with escaped LIKE wildcards", function()
-            local prepared_sql
-            local bound_values
-            local exec_calls = 0
-            local closed = false
-            package.loaded["lua-ljsqlite3/init"] = {
-                open = function()
-                    return {
-                        set_busy_timeout = function() end,
-                        exec = function()
-                            exec_calls = exec_calls + 1
-                            return nil
-                        end,
-                        prepare = function(self, sql)
-                            prepared_sql = sql
-                            return {
-                                bind = function(self, ...)
-                                    bound_values = { ... }
-                                    return self
-                                end,
-                                step = function()
-                                    return nil
-                                end,
-                                clearbind = function(self)
-                                    return self
-                                end,
-                                reset = function(self)
-                                    return self
-                                end,
-                                close = function() end,
-                                finalize = function() end,
-                            }
-                        end,
-                        close = function()
-                            closed = true
-                        end,
-                    }
-                end,
-            }
-
-            _G.G_reader_settings = {
-                readSetting = function(self, key)
-                    if key == "home_dir" then return "/home/100%_semi;quote'" end
-                    return nil
-                end,
-                isTrue = function() return false end,
-                isFalse = function() return false end,
-            }
-
-            local menu = {
-                show_parent = {},
-                root_path = "/test",
-                onHome = function() end,
-                registerKeyEvents = function() end,
-                file_chooser = { path = "/test" },
-            }
-            for k, v in pairs(CoverMenu) do menu[k] = v end
-
-            menu:setupLayout()
-            menu.title_bar.center_icon_hold_callback()
-            menu.render_context = { is_pathchooser = false }
-
-            local result = menu:genItemTable({}, {}, "/test")
-
-            assert.is_table(result)
-            assert.equal(0, exec_calls)
-            assert.is_true(closed)
-            assert.match("LIKE %?", prepared_sql)
-            assert.match("ESCAPE", prepared_sql)
-            assert.equal("/home/100\\%\\_semi;quote'/%", bound_values[1])
-        end)
-
-        it("keeps metabrowse mode scoped to the menu instance", function()
-            package.loaded["covermenu"] = nil
-            CoverMenu = require("covermenu")
-            CoverMenu._Menu_updatePageInfo_orig = function() end
-            local original_get_list_item = FileChooser.getListItem
-
-            local library_calls = 0
-            BookInfoManager.getLibraryEntries = function()
-                library_calls = library_calls + 1
-                return {
-                    { directory = "/home/library/", filename = "alpha.epub" },
-                }
-            end
-            BookInfoManager.getLibraryRevision = function()
-                return 0
-            end
-            BookInfoManager.getSetting = function()
-                return false
-            end
-            package.loaded["libs/libkoreader-lfs"].attributes = function()
-                return { mode = "file" }
-            end
-            FileChooser.getListItem = function(self, dirpath, filename, fullpath, attributes, collate)
-                return {
-                    text = filename,
-                    path = fullpath,
-                    is_file = true,
-                }
-            end
-
-            CoverMenu._FileChooser_genItemTable_orig = function()
-                return {
-                    { text = "regular.epub", path = "/test/regular.epub", is_file = true },
-                }
-            end
-
-            local first_menu = {
-                show_parent = {},
-                root_path = "/test",
-                onHome = function() end,
-                registerKeyEvents = function() end,
-                file_chooser = { path = "/test" },
-            }
-            for k, v in pairs(CoverMenu) do first_menu[k] = v end
-            first_menu:setupLayout()
-            first_menu.render_context = { is_pathchooser = false }
-            first_menu.title_bar.center_icon_hold_callback()
-
-            local second_menu = {
-                show_parent = {},
-                root_path = "/test",
-                onHome = function() end,
-                registerKeyEvents = function() end,
-                file_chooser = { path = "/test" },
-            }
-            for k, v in pairs(CoverMenu) do second_menu[k] = v end
-            second_menu:setupLayout()
-            second_menu.render_context = { is_pathchooser = false }
-
-            local first_result = first_menu:genItemTable({}, {}, "/test")
-            local second_result = second_menu:genItemTable({}, {}, "/test")
-
-            FileChooser.getListItem = original_get_list_item
-
-            assert.equal(1, #first_result)
-            assert.equal(1, #second_result)
-            assert.equal("alpha.epub", first_result[1].text)
-            assert.equal("regular.epub", second_result[1].text)
-            assert.equal(1, library_calls)
-        end)
     end)
 
     describe("setupLayout", function()
@@ -642,71 +502,6 @@ describe("CoverMenu", function()
             assert.equal(0, format_footer_calls)
         end)
 
-        it("passes the menu instance's metabrowse flag to the footer formatter", function()
-            local meta_browse_flags = {}
-            local original_format_footer_text = package.loaded["ptutil"].formatFooterText
-            local original_get_default_dir = package.loaded["apps/filemanager/filemanagerutil"].getDefaultDir
-            local original_has_folder_shortcut = package.loaded["apps/filemanager/filemanagershortcuts"].hasFolderShortcut
-            package.loaded["ptutil"].formatFooterText = function(_, _, _, _, _, meta_browse_mode)
-                table.insert(meta_browse_flags, meta_browse_mode)
-                return "Footer"
-            end
-            package.loaded["apps/filemanager/filemanagerutil"].getDefaultDir = function()
-                return "/default"
-            end
-            package.loaded["apps/filemanager/filemanagershortcuts"].hasFolderShortcut = function()
-                return false
-            end
-
-            local first_menu = {
-                show_parent = {},
-                root_path = "/test",
-                onHome = function() end,
-                registerKeyEvents = function() end,
-                file_chooser = { path = "/test" },
-                path = "/library/one",
-                page_info_text = {
-                    text = "1 / 1",
-                    setText = function(self, text) self.text = text end,
-                },
-                page_info = { getSize = function() return { w = 100 } end },
-                cur_folder_text = {
-                    setMaxWidth = function() end,
-                    setText = function() end,
-                },
-                screen_w = 600,
-            }
-            for k, v in pairs(CoverMenu) do first_menu[k] = v end
-            first_menu:setupLayout()
-            first_menu.render_context = { is_pathchooser = false }
-            first_menu.title_bar.center_icon_hold_callback()
-
-            local second_menu = {
-                path = "/library/two",
-                page_info_text = {
-                    text = "1 / 1",
-                    setText = function(self, text) self.text = text end,
-                },
-                page_info = { getSize = function() return { w = 100 } end },
-                cur_folder_text = {
-                    setMaxWidth = function() end,
-                    setText = function() end,
-                },
-                screen_w = 600,
-                render_context = { is_pathchooser = false },
-                _pt_pathchooser = false,
-                _pt_meta_browse_mode = false,
-            }
-            for k, v in pairs(CoverMenu) do second_menu[k] = v end
-
-            second_menu:updatePageInfo(1)
-
-            package.loaded["ptutil"].formatFooterText = original_format_footer_text
-            package.loaded["apps/filemanager/filemanagerutil"].getDefaultDir = original_get_default_dir
-            package.loaded["apps/filemanager/filemanagershortcuts"].hasFolderShortcut = original_has_folder_shortcut
-
-            assert.same({ false }, meta_browse_flags)
-        end)
     end)
 
     describe("onCloseWidget", function()
@@ -1566,6 +1361,25 @@ describe("CoverMenu", function()
             menu:setupLayout()
 
             assert.equal("hero", menu.title_bar.center_icon)
+        end)
+
+        it("toggles KOReader's native flat view by holding the center icon", function()
+            local toggled_mode
+            local menu = {
+                show_parent = {},
+                root_path = "/test",
+                registerKeyEvents = function() end,
+                file_chooser = { path = "/test" },
+            }
+            for k, v in pairs(CoverMenu) do menu[k] = v end
+
+            menu:setupLayout()
+            menu.file_chooser.toggleShowFilesMode = function(_, mode)
+                toggled_mode = mode
+            end
+            menu.title_bar.center_icon_hold_callback()
+
+            assert.equal("show_flat_view", toggled_mode)
         end)
 
         it("preserves FileChooser init behavior", function()

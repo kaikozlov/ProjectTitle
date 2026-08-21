@@ -2,7 +2,7 @@ require 'busted.runner'()
 local setup_mocks = require("spec.support.mock_ui")
 
 describe("Main Menu Scoping", function()
-    local SAFE_VERSION = 202603000000
+    local SAFE_VERSION = 202607000000
     local CoverBrowser
     local CoverMenu
 
@@ -593,5 +593,51 @@ describe("Main Menu Scoping", function()
 
         CoverBrowser:setupFileManagerDisplayMode(nil)
         assert.equal(original_init, PathChooser.init)
+    end)
+
+    it("restores instance-scoped overrides when the plugin stops", function()
+        local PathChooser = package.loaded["ui/widget/pathchooser"]
+        local FileChooser = package.loaded["ui/widget/filechooser"]
+        local history = package.loaded["apps/filemanager/filemanagerhistory"]
+        local collections = package.loaded["apps/filemanager/filemanagercollection"]
+        local filesearcher = package.loaded["apps/filemanager/filemanagerfilesearcher"]
+        local file_chooser = {
+            updateItems = FileChooser.updateItems,
+            onCloseWidget = FileChooser.onCloseWidget,
+            genItemTable = FileChooser.genItemTable,
+            _recalculateDimen = FileChooser._recalculateDimen,
+            switchItemTable = function() end,
+        }
+
+        CoverBrowser.ui = {
+            coverbrowser = CoverBrowser,
+            projecttitle = CoverBrowser,
+            file_chooser = file_chooser,
+        }
+        CoverBrowser.refreshFileManagerInstance = function() end
+        CoverBrowser:setupFileManagerDisplayMode(nil)
+        CoverBrowser.setupWidgetDisplayMode("history", nil)
+        CoverBrowser.setupWidgetDisplayMode("collections", nil)
+
+        local original_pathchooser_init = PathChooser.init
+        local original_history_update = history.updateItemTable
+        local original_collections_update = collections.updateItemTable
+        local original_filesearcher_update = filesearcher.updateItemTable
+
+        CoverBrowser:setupFileManagerDisplayMode("list_image_meta")
+        CoverBrowser.setupWidgetDisplayMode("history", "list_image_meta")
+        CoverBrowser.setupWidgetDisplayMode("collections", "list_image_meta")
+        CoverBrowser:stopPlugin()
+
+        assert.equal(FileChooser.updateItems, file_chooser.updateItems)
+        assert.equal(FileChooser.onCloseWidget, file_chooser.onCloseWidget)
+        assert.equal(FileChooser.genItemTable, file_chooser.genItemTable)
+        assert.equal(FileChooser._recalculateDimen, file_chooser._recalculateDimen)
+        assert.equal(original_pathchooser_init, PathChooser.init)
+        assert.equal(original_history_update, history.updateItemTable)
+        assert.equal(original_collections_update, collections.updateItemTable)
+        assert.equal(original_filesearcher_update, filesearcher.updateItemTable)
+        assert.is_nil(CoverBrowser.ui.coverbrowser)
+        assert.is_nil(CoverBrowser.ui.projecttitle)
     end)
 end)

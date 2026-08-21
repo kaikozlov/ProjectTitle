@@ -83,6 +83,21 @@ local function setup_mocks()
         copyFile = function(src, dest) return true end,
         execute = function(...) return 0 end
     }
+
+    package.loaded["ffi/archiver"] = {
+        Reader = {
+            new = function()
+                return {
+                    open = function() return false end,
+                    iterate = function()
+                        return function() return nil end
+                    end,
+                    extractToMemory = function() return nil end,
+                    close = function() end,
+                }
+            end,
+        },
+    }
     
     package.loaded["ui/size"] = {
         border = { thin = 1, default = 2, thick = 3 },
@@ -365,6 +380,12 @@ local function setup_mocks()
     package.loaded["util"] = {
         splitFilePathName = function(p) return "/dir", "file.epub" end,
         getFriendlySize = function() return "1MB" end,
+        arrayContains = function(values, expected)
+            for _, value in ipairs(values or {}) do
+                if value == expected then return true end
+            end
+            return false
+        end,
         fileExists = function(filepath)
             -- Return true for font files needed by installFonts()
             if filepath:match("SourceSans3%-Regular%.ttf$") then return true end

@@ -19,7 +19,7 @@ describe("Main Display Mode Switching", function()
             new = function(o) return o end
         }
         package.loaded["version"] = {
-            getNormalizedCurrentVersion = function() return 202510000000, "commit" end
+            getNormalizedCurrentVersion = function() return 202607000000, "commit" end
         }
         package.loaded["ui/widget/bookstatuswidget"] = {}
         package.loaded["altbookstatuswidget"] = {}
@@ -386,14 +386,6 @@ describe("Main Display Mode Switching", function()
 
             BookInfoManager:saveSetting("show_tags", false)
             assert.is_nil(BookInfoManager:getSetting("show_tags"))
-        end)
-
-        it("stores opened_at_top_of_library setting", function()
-            BookInfoManager:saveSetting("opened_at_top_of_library", true)
-            assert.equal("Y", BookInfoManager:getSetting("opened_at_top_of_library"))
-
-            BookInfoManager:saveSetting("opened_at_top_of_library", false)
-            assert.is_nil(BookInfoManager:getSetting("opened_at_top_of_library"))
         end)
 
         it("stores author_series_order setting", function()

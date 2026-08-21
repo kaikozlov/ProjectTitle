@@ -34,7 +34,7 @@ describe("Main Settings", function()
             askForRestart = function() end,
         }
         package.loaded["ui/widget/infomessage"] = { new = function() return {} end }
-        package.loaded["version"] = { getNormalizedCurrentVersion = function() return 202510000000, "commit" end }
+        package.loaded["version"] = { getNormalizedCurrentVersion = function() return 202607000000, "commit" end }
         package.loaded["ui/widget/bookstatuswidget"] = {}
         package.loaded["altbookstatuswidget"] = {}
         package.loaded["ui/widget/filechooser"] = {}
@@ -402,43 +402,4 @@ describe("Main Settings", function()
         assert.is_true(restart_requested)
     end)
 
-    it("stores the KOReader new status from the library status filter menu", function()
-        local restart_requested = false
-        local UIManager = package.loaded["ui/uimanager"]
-        local original_ask_for_restart = UIManager.askForRestart
-        UIManager.askForRestart = function()
-            restart_requested = true
-        end
-
-        CoverBrowser.ui = {
-            file_chooser = {
-                nb_cols_portrait = 3,
-                nb_rows_portrait = 4,
-                nb_cols_landscape = 4,
-                nb_rows_landscape = 3,
-                files_per_page = 10,
-                updateItems = function() end,
-            }
-        }
-        CoverBrowser.modes = { { "Mode 1", "mode1" } }
-
-        local menu_items = {}
-        CoverBrowser:addToMainMenu(menu_items)
-
-        local new_status = find_menu_item(menu_items.filemanager_display_mode.sub_item_table, {
-            "Advanced settings",
-            "Library mode",
-            "Read status filter",
-            "New",
-        })
-
-        assert.is_not_nil(new_status)
-
-        new_status.callback()
-
-        UIManager.askForRestart = original_ask_for_restart
-
-        assert.equal("new", BookInfoManager:getSetting("library_status_filter"))
-        assert.is_true(restart_requested)
-    end)
 end)

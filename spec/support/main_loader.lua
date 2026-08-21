@@ -1,6 +1,6 @@
 local setup_mocks = require("spec.support.mock_ui")
 
-local SAFE_VERSION = 202603000000
+local SAFE_VERSION = 202607000000
 
 local function build_bookinfomanager()
     local settings = {}
@@ -79,6 +79,12 @@ local function load_main(opts)
     }
 
     local util = package.loaded["util"] or {}
+    util.arrayContains = function(values, expected)
+        for _, value in ipairs(values or {}) do
+            if value == expected then return true end
+        end
+        return false
+    end
     util.fileExists = function(filepath)
         if filepath:match("pt%-skipversioncheck%.txt$") then
             return state.skip_version_file

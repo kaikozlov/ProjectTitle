@@ -60,15 +60,17 @@ describe("String Allocation Optimization", function()
             assert.truthy(result:find("Fantasy Series"))
         end)
 
-        it("formatSeries suppresses index 0", function()
+        it("formatSeries preserves index 0", function()
             local result = ptutil.formatSeries("Fantasy Series", 0)
-            assert.equal("", result)
+            assert.truthy(result:find("#0"))
+            assert.truthy(result:find("Fantasy Series"))
         end)
 
         it("formatSeries handles subseries format", function()
             local result = ptutil.formatSeries("Big Series: Small Subseries", 1)
             assert.is_string(result)
-            -- Should show only the subseries part
+            -- Keep the full series string, including any colon-delimited parent.
+            assert.truthy(result:find("Big Series"))
             assert.truthy(result:find("Small Subseries"))
         end)
 
