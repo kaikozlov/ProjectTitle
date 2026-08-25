@@ -128,7 +128,11 @@ local COVER_CACHE_FREE_MEMORY_PROPORTION = 0.05
 local cover_cache = nil
 
 local function get_cover_cache_budget()
-    local free_memory = util.calcFreeMem and tonumber(util.calcFreeMem())
+    local free_memory
+    if util.calcFreeMem then
+        free_memory = util.calcFreeMem()
+        free_memory = tonumber(free_memory)
+    end
     if not free_memory or free_memory <= 0 then
         return COVER_CACHE_MAX_BYTES
     end

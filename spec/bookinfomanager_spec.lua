@@ -696,11 +696,11 @@ describe("BookInfoManager", function()
             assert.equal(35, cache.slots)
         end)
 
-        it("reduces the cover-cache budget when free memory is constrained", function()
+        it("uses only the available-memory result when sizing a constrained cover cache", function()
             local util = package.loaded["util"]
             local original_calc_free_mem = util.calcFreeMem
             util.calcFreeMem = function()
-                return 32 * 1024 * 1024
+                return 32 * 1024 * 1024, 256 * 1024 * 1024
             end
             package.loaded["bookinfomanager"] = nil
             BookInfoManager = require("bookinfomanager")
